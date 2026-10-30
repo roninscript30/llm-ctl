@@ -12,7 +12,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from llm_ctl.hub import get_vram_badge, HUB_MODELS
 from llm_ctl.orchestrator import get_active_model, save_active_model
-from llm_ctl.banner import visible_len, render_reference_status_card
+from llm_ctl.banner import (
+    visible_len, ansi_ljust,
+    render_reference_banner,
+    render_reference_status_card,
+    render_reference_quick_commands
+)
 
 class TestLlmCtl(unittest.TestCase):
 
@@ -45,10 +50,83 @@ class TestLlmCtl(unittest.TestCase):
         self.assertIn("qwen2.5-coder:3b", card)
         self.assertIn("[READY]", card)
 
+        # Check all lines have exact same width
+        lines = card.splitlines()
+        first_len = visible_len(lines[0])
+        for l in lines:
+            self.assertEqual(visible_len(l), first_len)
+
+    def test_status_card_in_vram_and_fallback(self):
+        # Test in VRAM badge
+        card_vram = render_reference_status_card(
+            True, "http://127.0.0.1:11434",
+            None,
+            {"used_gb": 4.0, "total_gb": 8.0},
+            "qwen2.5-coder:3b",
+            loaded_models=[{"name": "qwen2.5-coder:3b"}]
+        )
+        self.assertIn("[IN VRAM]", card_vram)
+        self.assertIn("No GPU detected", card_vram)
+        self.assertIn("CPU fallback", card_vram)
+
+        # Test long model name clamp
+        long_model = "deepseek-r1:32b-q4_k_m-extra-long-name-here"
+        card_long = render_reference_status_card(
+            True, "http://127.0.0.1:11434",
+            None,
+            {"used_gb": 4.0, "total_gb": 8.0},
+            long_model
+        )
+        lines = card_long.splitlines()
+        first_len = visible_len(lines[0])
+        for l in lines:
+            self.assertEqual(visible_len(l), first_len)
+
+    def test_banner_and_quick_commands(self):
+        banner = render_reference_banner()
+        self.assertIn("LOCAL MODEL CONTROL", banner)
+        self.assertIn("Manage · Switch · Run · Integrate · Your Local Models", banner)
+        # Ensure side cube connector wires were removed
+        self.assertNotIn("─── Ollama", banner)
+        self.assertNotIn("─── Local Models", banner)
+
+        cmds = render_reference_quick_commands()
+        for cmd in ["models", "switch", "chat", "agents", "status", "pull", "remove", "run", "doctor", "config", "help"]:
+            self.assertIn(cmd, cmds)
+
+    def test_ansi_ljust_and_visible_len(self):
+        raw = "\033[96mHello \033[1;92mWorld\033[0m"
+        self.assertEqual(visible_len(raw), 11)
+        padded = ansi_ljust(raw, 20)
+        self.assertEqual(visible_len(padded), 20)
+        clamped = ansi_ljust(raw, 5)
+        self.assertEqual(visible_len(clamped), 5)
+
     @patch("llm_ctl.orchestrator.CONFIG_FILE", "/tmp/test_llm_ctl_config.json")
     def test_active_model_persistence(self):
         save_active_model("test-model:latest")
         self.assertEqual(get_active_model(), "test-model:latest")
+
+    def test_doctor_diagnostics(self):
+        from llm_ctl.doctor import check_gpu, check_ram, check_config_file, check_coding_agents
+        gpu_ok, gpu_msg, _ = check_gpu()
+        self.assertIsInstance(gpu_ok, bool)
+        self.assertIsInstance(gpu_msg, str)
+
+        ram_ok, ram_msg, _ = check_ram()
+        self.assertIsInstance(ram_ok, bool)
+        self.assertIn("GiB", ram_msg)
+
+        agents = check_coding_agents()
+        self.assertEqual(len(agents), 3)
+
+    def test_interactive_completer(self):
+        from llm_ctl.interactive import Completer
+        completer = Completer(["models", "switch", "chat", "doctor", "help"])
+        # Test command prefix
+        self.assertEqual(completer.complete("do", 0), "doctor")
+        self.assertEqual(completer.complete("sw", 0), "switch")
+        self.assertEqual(completer.complete("nonexistent", 0), None)
 
 if __name__ == "__main__":
     unittest.main()
