@@ -1,63 +1,129 @@
 """
-Minimalist, high-aesthetic header and telemetry gauge rendering for llm-ctl.
+High-aesthetic visual branding, isometric 3D wireframe art, and status cards.
+Optimized for SpaceMono-Regular (11pt) font and matches the exact reference design.
 """
 
+import re
 from .terminal import (
     BOLD, DIM, RESET, CYAN, BRIGHT_CYAN, GREEN, BRIGHT_GREEN,
-    YELLOW, BRIGHT_YELLOW, RED, BRIGHT_RED, WHITE, BRIGHT_WHITE, ITALIC
+    YELLOW, BRIGHT_YELLOW, RED, BRIGHT_RED, WHITE, BRIGHT_WHITE
 )
 
-# Sleek minimalist ASCII brand logo
-ASCII_LOGO = f"""
-  {BRIGHT_CYAN}█░░ █░░ █▀▄▀█ {DIM}▄▄{RESET} {BRIGHT_CYAN}█▀▀ ▀█▀ █░░{RESET}
-  {CYAN}█░░ █░░ █░▀░█ {DIM}░░{RESET} {CYAN}█▄▄ ░█░ █▄▄{RESET} {DIM}v0.3.0 · Local LLM Orchestrator{RESET}
-"""
+ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
 
-def render_gauge_bar(used: float, total: float, width: int = 20) -> str:
-    """Renders a sleek colored progress bar with smooth block characters."""
-    pct = (used / total * 100.0) if total > 0 else 0.0
-    filled = int(round(width * (pct / 100.0)))
-    empty = width - filled
+def visible_len(s: str) -> int:
+    """Computes the visible width of a string ignoring ANSI color codes."""
+    return len(ANSI_RE.sub('', s))
 
-    if pct >= 88:
-        color = BRIGHT_RED
-    elif pct >= 70:
-        color = BRIGHT_YELLOW
-    else:
-        color = BRIGHT_GREEN
+def ansi_ljust(s: str, width: int) -> str:
+    """Left-justifies a string based on visible length without breaking ANSI formatting."""
+    vlen = visible_len(s)
+    if vlen < width:
+        return s + (" " * (width - vlen))
+    return s
 
-    bar = f"{color}{'━' * filled}{DIM}{'─' * empty}{RESET}"
-    return f"[{bar}] {color}{pct:4.1f}%{RESET}"
+def render_reference_banner() -> str:
+    """
+    Renders the exact hero section matching the reference design:
+    Left: 3D block LLM-CTL title + subtitle
+    Right: Isometric wireframe processor cube with circuit routes
+    """
+    left_lines = [
+        f"{BRIGHT_CYAN}  ██╗     ██╗     ███╗   ███╗     ██████╗████████╗██╗     {RESET}",
+        f"{BRIGHT_CYAN}  ██║     ██║     ████╗ ████║    ██╔════╝╚══██╔══╝██║     {RESET}",
+        f"{BRIGHT_CYAN}  ██║     ██║     ██╔████╔██║▄▄▄▄██║        ██║   ██║     {RESET}",
+        f"{BRIGHT_CYAN}  ██║     ██║     ██║╚██╔╝██║    ██║        ██║   ██║     {RESET}",
+        f"{BRIGHT_CYAN}  ███████╗███████╗██║ ╚═╝ ██║    ╚██████╗   ██║   ███████╗{RESET}",
+        f"{BRIGHT_CYAN}  ╚══════╝╚══════╝╚═╝     ╚═╝     ╚═════╝   ╚═╝   ╚══════╝{RESET}",
+        f"       {DIM}────────{RESET} {BOLD}{WHITE}LOCAL  MODEL  CONTROL{RESET} {DIM}────────{RESET}        ",
+        f"   {DIM}Manage  ·  Switch  ·  Run  ·  Integrate  ·  Your Local Models{RESET}  "
+    ]
 
-def render_dashboard_header(active_model: str, gpu_info: dict | None, ram_info: dict, loaded_models: list) -> str:
-    """Generates the sleek top telemetry header."""
-    lines = []
-    lines.append(ASCII_LOGO.strip("\n"))
-    lines.append(f"  {DIM}────────────────────────────────────────────────────────────────────────{RESET}")
+    right_lines = [
+        f"         {CYAN}┌─────────┐{RESET}        ",
+        f"        {CYAN}/         /│{RESET}       {DIM}───{RESET} {WHITE}Ollama{RESET}",
+        f"       {CYAN}/         / │{RESET}       {DIM}───{RESET} {WHITE}Local Models{RESET}",
+        f"      {CYAN}┌─────────┐  │  ┌───{RESET} {DIM}───{RESET} {WHITE}Coding Agents{RESET}",
+        f"      {CYAN}│         │  │  │{RESET}    {DIM}───{RESET} {WHITE}GPU / VRAM{RESET}",
+        f"      {CYAN}│         │  ├──┘{RESET}    {DIM}───{RESET} {WHITE}Terminal First{RESET}",
+        f"      {CYAN}│         │ /{RESET}         ",
+        f"      {CYAN}└─────────┘{RESET}           "
+    ]
 
-    # Service & Active Model Line
-    service_badge = f"{BRIGHT_GREEN}● Active{RESET}"
-    lines.append(f"  {BOLD}Service:{RESET} {service_badge} {DIM}(127.0.0.1:11434){RESET}  │  {BOLD}Active Model:{RESET} {BRIGHT_GREEN}{active_model}{RESET}")
+    combined = []
+    for l, r in zip(left_lines, right_lines):
+        combined.append(f"{ansi_ljust(l, 60)} {r}")
+    return "\n".join(combined)
 
-    # GPU VRAM Line
+def render_reference_status_card(is_active: bool, host: str, gpu_info: dict | None, ram_info: dict, active_model: str) -> str:
+    """
+    Renders the exact 4-column rounded horizontal status card:
+    [ Connected | RAM gauge | GPU VRAM | Active Model READY ]
+    """
+    col1_w = 23
+    col2_w = 23
+    col3_w = 24
+    col4_w = 26
+    inner_width = col1_w + col2_w + col3_w + col4_w + 3  # for 3 dividers
+
+    # RAM gauge bar
+    ram_used = ram_info.get("used_gb", 0.0)
+    ram_total = ram_info.get("total_gb", 7.1)
+    ram_pct = (ram_used / ram_total) if ram_total > 0 else 0.0
+    bar_width = 10
+    filled = int(round(bar_width * ram_pct))
+    empty = bar_width - filled
+    ram_bar = f"{BRIGHT_GREEN}{'█' * filled}{DIM}{'░' * empty}{RESET}"
+
+    # Status Strings
+    srv_status = f"{BRIGHT_GREEN}● Ollama: Connected{RESET}" if is_active else f"{RED}○ Ollama: Offline{RESET}"
+    host_display = host.replace("http://", "")
+
     if gpu_info:
-        gpu_used = gpu_info["used_mb"] / 1024.0
-        gpu_total = gpu_info["total_mb"] / 1024.0
-        gpu_bar = render_gauge_bar(gpu_info["used_mb"], gpu_info["total_mb"], width=18)
-        lines.append(f"  {BOLD}GPU VRAM:{RESET} {gpu_bar} {DIM}({gpu_used:.2f}/{gpu_total:.1f} GB · {gpu_info['temp_c']}°C · {gpu_info['power_w']}W · {gpu_info['name']}){RESET}")
+        vram_pct = (gpu_info["used_mb"] / gpu_info["total_mb"] * 100) if gpu_info["total_mb"] > 0 else 0
+        gpu_display = f"{vram_pct:1.0f}% │ {gpu_info['used_mb']:1.0f} / {gpu_info['total_mb']:1.0f} MiB"
     else:
-        lines.append(f"  {BOLD}GPU VRAM:{RESET} {DIM}No NVIDIA GPU detected{RESET}")
+        gpu_display = "No GPU detected"
 
-    # System RAM Line
-    ram_bar = render_gauge_bar(ram_info["used_gb"], ram_info["total_gb"], width=18)
-    lines.append(f"  {BOLD}Host RAM:{RESET} {ram_bar} {DIM}({ram_info['used_gb']:.1f}/{ram_info['total_gb']:.1f} GB · {ram_info['free_gb']:.1f} GB free){RESET}")
+    ready_badge = f"{BRIGHT_GREEN}[READY]{RESET}"
 
-    # Loaded in VRAM Status
-    if loaded_models:
-        loaded_str = ", ".join([f"{BRIGHT_GREEN}▶ {m['name']}{RESET} {DIM}({m['size']}, {m['processor']}){RESET}" for m in loaded_models])
-        lines.append(f"  {BOLD}In VRAM:{RESET}  {loaded_str}  {BRIGHT_GREEN}(100% Dedicated){RESET}")
-    else:
-        lines.append(f"  {BOLD}In VRAM:{RESET}  {DIM}None loaded (GPU memory is 100% idle & free for system){RESET}")
+    # Borders
+    top_border = f"  {CYAN}╭" + "─" * inner_width + f"╮{RESET}"
+    bottom_border = f"  {CYAN}╰" + "─" * inner_width + f"╯{RESET}"
 
-    lines.append(f"  {DIM}────────────────────────────────────────────────────────────────────────{RESET}\n")
+    # Row 1 (Category Headers)
+    r1_c1 = ansi_ljust(f" {srv_status}", col1_w)
+    r1_c2 = ansi_ljust(f" {CYAN}󰍛{RESET} {BOLD}{WHITE}RAM{RESET}", col2_w)
+    r1_c3 = ansi_ljust(f" {CYAN}󰢮{RESET} {BOLD}{WHITE}GPU{RESET}", col3_w)
+    r1_c4 = ansi_ljust(f" {CYAN}󰆍{RESET} {BOLD}{WHITE}Active Model{RESET}", col4_w)
+    row1 = f"  {CYAN}│{RESET}{r1_c1}{CYAN}│{RESET}{r1_c2}{CYAN}│{RESET}{r1_c3}{CYAN}│{RESET}{r1_c4}{CYAN}│{RESET}"
+
+    # Row 2 (Values)
+    r2_c1 = ansi_ljust(f"   {DIM}{host_display}{RESET}", col1_w)
+    r2_c2 = ansi_ljust(f"   {WHITE}{ram_used:.1f} / {ram_total:.1f} GiB{RESET}", col2_w)
+    r2_c3 = ansi_ljust(f"   {WHITE}{gpu_display}{RESET}", col3_w)
+    r2_c4 = ansi_ljust(f"   {BRIGHT_WHITE}{active_model}{RESET} {ready_badge}", col4_w)
+    row2 = f"  {CYAN}│{RESET}{r2_c1}{CYAN}│{RESET}{r2_c2}{CYAN}│{RESET}{r2_c3}{CYAN}│{RESET}{r2_c4}{CYAN}│{RESET}"
+
+    # Row 3 (RAM bar row)
+    r3_c1 = ansi_ljust(" ", col1_w)
+    r3_c2 = ansi_ljust(f"   [{ram_bar}]", col2_w)
+    r3_c3 = ansi_ljust(" ", col3_w)
+    r3_c4 = ansi_ljust(" ", col4_w)
+    row3 = f"  {CYAN}│{RESET}{r3_c1}{CYAN}│{RESET}{r3_c2}{CYAN}│{RESET}{r3_c3}{CYAN}│{RESET}{r3_c4}{CYAN}│{RESET}"
+
+    return f"{top_border}\n{row1}\n{row2}\n{row3}\n{bottom_border}"
+
+def render_reference_quick_commands() -> str:
+    """
+    Renders the Quick Commands table matching the reference design.
+    """
+    lines = [
+        f"  {BOLD}{BRIGHT_CYAN}Quick Commands:{RESET}",
+        f"    {BRIGHT_GREEN}models{RESET}       {WHITE}List installed models{RESET}             {BRIGHT_GREEN}pull{RESET}         {WHITE}Download a model{RESET}",
+        f"    {BRIGHT_GREEN}switch{RESET}       {WHITE}Switch active model{RESET}               {BRIGHT_GREEN}remove{RESET}       {WHITE}Remove a model{RESET}",
+        f"    {BRIGHT_GREEN}chat{RESET}         {WHITE}Start interactive chat{RESET}            {BRIGHT_GREEN}run{RESET}          {WHITE}Start local server (if needed){RESET}",
+        f"    {BRIGHT_GREEN}agents{RESET}       {WHITE}Manage coding agents{RESET}              {BRIGHT_GREEN}config{RESET}       {WHITE}Edit configuration{RESET}",
+        f"    {BRIGHT_GREEN}status{RESET}       {WHITE}Show system & model status{RESET}        {BRIGHT_GREEN}help{RESET}         {WHITE}Show all commands{RESET}"
+    ]
     return "\n".join(lines)

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from llm_ctl.hub import get_vram_badge, HUB_MODELS
 from llm_ctl.orchestrator import get_active_model, save_active_model
-from llm_ctl.banner import render_gauge_bar
+from llm_ctl.banner import visible_len, render_reference_status_card
 
 class TestLlmCtl(unittest.TestCase):
 
@@ -34,9 +34,16 @@ class TestLlmCtl(unittest.TestCase):
             self.assertIn("est_vram_mb", m)
             self.assertIn("category", m)
 
-    def test_gauge_bar_rendering(self):
-        gauge = render_gauge_bar(2048.0, 4096.0, width=10)
-        self.assertIn("50.0%", gauge)
+    def test_status_card_rendering(self):
+        card = render_reference_status_card(
+            True, "http://127.0.0.1:11434",
+            {"used_mb": 2.0, "total_mb": 4096.0},
+            {"used_gb": 4.1, "total_gb": 7.1},
+            "qwen2.5-coder:3b"
+        )
+        self.assertIn("Ollama: Connected", card)
+        self.assertIn("qwen2.5-coder:3b", card)
+        self.assertIn("[READY]", card)
 
     @patch("llm_ctl.orchestrator.CONFIG_FILE", "/tmp/test_llm_ctl_config.json")
     def test_active_model_persistence(self):
