@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-ctl"
+version = "0.3.0"
+description = "Modern Developer CLI for Local LLM Management, VRAM Orchestration & Model Discovery"
+readme = "README.md"
+authors = [
+    { name = "Marudhu", email = "marudhu@local" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = [
+    "rich>=13.0.0",
+]
+keywords = ["llm", "ollama", "vram", "cli", "ai", "deepseek", "qwen", "local-ai"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.scripts]
+llm = "llm_ctl.cli:main"
+llm-ctl = "llm_ctl.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
