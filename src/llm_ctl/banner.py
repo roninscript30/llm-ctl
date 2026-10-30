@@ -1,92 +1,63 @@
 """
-Terminal banner, ASCII branding, and visual status cards for llm-ctl.
+Minimalist, high-aesthetic header and telemetry gauge rendering for llm-ctl.
 """
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
+from .terminal import (
+    BOLD, DIM, RESET, CYAN, BRIGHT_CYAN, GREEN, BRIGHT_GREEN,
+    YELLOW, BRIGHT_YELLOW, RED, BRIGHT_RED, WHITE, BRIGHT_WHITE, ITALIC
+)
 
-console = Console()
-
-# Modern, clean ASCII art banner
-ASCII_LOGO = r"""
- █░░ █░░ █▀▄▀█ ▄▄ █▀▀ ▀█▀ █░░
- █░░ █░░ █░▀░█ ░░ █▄▄ ░█░ █▄▄
+# Sleek minimalist ASCII brand logo
+ASCII_LOGO = f"""
+  {BRIGHT_CYAN}█░░ █░░ █▀▄▀█ {DIM}▄▄{RESET} {BRIGHT_CYAN}█▀▀ ▀█▀ █░░{RESET}
+  {CYAN}█░░ █░░ █░▀░█ {DIM}░░{RESET} {CYAN}█▄▄ ░█░ █▄▄{RESET} {DIM}v0.3.0 · Local LLM Orchestrator{RESET}
 """
 
-TAGLINE = "Native Local LLM Control Hub & VRAM Orchestrator"
-
-def render_banner(active_model: str = "None", endpoint: str = "http://127.0.0.1:11434") -> Panel:
-    """Renders the aesthetic header panel with logo and metadata."""
-    logo_text = Text(ASCII_LOGO, style="bold cyan")
-    
-    meta_table = Table.grid(padding=(0, 2))
-    meta_table.add_column(style="bold white")
-    meta_table.add_column(style="cyan")
-    
-    meta_table.add_row("⚡ Service:", f"[green]● Active[/green] ({endpoint})")
-    meta_table.add_row("★ Active Model:", f"[bold bright_green]{active_model}[/bold bright_green]")
-
-    content = Table.grid(padding=(0, 1))
-    content.add_row(logo_text)
-    content.add_row(Text(f" {TAGLINE}", style="dim italic white"))
-    content.add_row(Text(""))
-    content.add_row(meta_table)
-
-    return Panel(
-        content,
-        border_style="bright_blue",
-        padding=(0, 1),
-    )
-
-def render_gauge(used: float, total: float, unit: str = "MiB", width: int = 18) -> Text:
-    """Renders a colored progress gauge bar."""
+def render_gauge_bar(used: float, total: float, width: int = 20) -> str:
+    """Renders a sleek colored progress bar with smooth block characters."""
     pct = (used / total * 100.0) if total > 0 else 0.0
     filled = int(round(width * (pct / 100.0)))
     empty = width - filled
-    
-    if pct >= 90:
-        color = "bright_red"
-    elif pct >= 75:
-        color = "bright_yellow"
+
+    if pct >= 88:
+        color = BRIGHT_RED
+    elif pct >= 70:
+        color = BRIGHT_YELLOW
     else:
-        color = "bright_green"
+        color = BRIGHT_GREEN
 
-    bar = f"[{'█' * filled}{'░' * empty}]"
-    return Text.from_markup(f"[{color}]{bar}[/{color}] {used:4.0f}/{total:4.0f} {unit} ({pct:4.1f}%)")
+    bar = f"{color}{'━' * filled}{DIM}{'─' * empty}{RESET}"
+    return f"[{bar}] {color}{pct:4.1f}%{RESET}"
 
-def render_telemetry_panel(gpu_info: dict, ram_info: dict, loaded_models: list) -> Panel:
-    """Renders the hardware telemetry card."""
-    table = Table(show_header=False, box=None, padding=(0, 1))
-    table.add_column("Metric", style="bold white", width=12)
-    table.add_column("Gauge", width=36)
-    table.add_column("Stats", style="dim")
+def render_dashboard_header(active_model: str, gpu_info: dict | None, ram_info: dict, loaded_models: list) -> str:
+    """Generates the sleek top telemetry header."""
+    lines = []
+    lines.append(ASCII_LOGO.strip("\n"))
+    lines.append(f"  {DIM}────────────────────────────────────────────────────────────────────────{RESET}")
 
-    # GPU Row
+    # Service & Active Model Line
+    service_badge = f"{BRIGHT_GREEN}● Active{RESET}"
+    lines.append(f"  {BOLD}Service:{RESET} {service_badge} {DIM}(127.0.0.1:11434){RESET}  │  {BOLD}Active Model:{RESET} {BRIGHT_GREEN}{active_model}{RESET}")
+
+    # GPU VRAM Line
     if gpu_info:
-        gpu_gauge = render_gauge(gpu_info["used_mb"], gpu_info["total_mb"], "MiB")
-        gpu_stats = f"{gpu_info['temp_c']}°C | {gpu_info['power_w']}W ({gpu_info['name']})"
-        table.add_row("GPU VRAM:", gpu_gauge, gpu_stats)
+        gpu_used = gpu_info["used_mb"] / 1024.0
+        gpu_total = gpu_info["total_mb"] / 1024.0
+        gpu_bar = render_gauge_bar(gpu_info["used_mb"], gpu_info["total_mb"], width=18)
+        lines.append(f"  {BOLD}GPU VRAM:{RESET} {gpu_bar} {DIM}({gpu_used:.2f}/{gpu_total:.1f} GB · {gpu_info['temp_c']}°C · {gpu_info['power_w']}W · {gpu_info['name']}){RESET}")
     else:
-        table.add_row("GPU VRAM:", "[dim]No NVIDIA GPU detected[/dim]", "")
+        lines.append(f"  {BOLD}GPU VRAM:{RESET} {DIM}No NVIDIA GPU detected{RESET}")
 
-    # RAM Row
-    if ram_info:
-        ram_gauge = render_gauge(ram_info["used_gb"] * 1024, ram_info["total_gb"] * 1024, "MiB")
-        ram_stats = f"{ram_info['free_gb']:.1f} GB Free (System Total: {ram_info['total_gb']:.1f} GB)"
-        table.add_row("System RAM:", ram_gauge, ram_stats)
+    # System RAM Line
+    ram_bar = render_gauge_bar(ram_info["used_gb"], ram_info["total_gb"], width=18)
+    lines.append(f"  {BOLD}Host RAM:{RESET} {ram_bar} {DIM}({ram_info['used_gb']:.1f}/{ram_info['total_gb']:.1f} GB · {ram_info['free_gb']:.1f} GB free){RESET}")
 
-    # In VRAM Status
+    # Loaded in VRAM Status
     if loaded_models:
-        loaded_str = ", ".join([f"[bold green]▶ {m['name']}[/bold green] ([dim]{m['size']}, {m['processor']}[/dim])" for m in loaded_models])
-        table.add_row("In VRAM:", Text.from_markup(loaded_str), "[bold green]100% Dedicated[/bold green]")
+        loaded_str = ", ".join([f"{BRIGHT_GREEN}▶ {m['name']}{RESET} {DIM}({m['size']}, {m['processor']}){RESET}" for m in loaded_models])
+        lines.append(f"  {BOLD}In VRAM:{RESET}  {loaded_str}  {BRIGHT_GREEN}(100% Dedicated){RESET}")
     else:
-        table.add_row("In VRAM:", "[dim green]GPU memory idle & 100% free for host system[/dim green]", "")
+        lines.append(f"  {BOLD}In VRAM:{RESET}  {DIM}None loaded (GPU memory is 100% idle & free for system){RESET}")
 
-    return Panel(
-        table,
-        title="[bold bright_white]Hardware Telemetry[/bold bright_white]",
-        border_style="cyan",
-        padding=(0, 1)
-    )
+    lines.append(f"  {DIM}────────────────────────────────────────────────────────────────────────{RESET}\n")
+    return "\n".join(lines)

@@ -1,212 +1,348 @@
 """
-Interactive single-keypress terminal dashboard and keyboard-navigable UI.
+Modern, keyboard-navigable interactive terminal UI with arrow-key controls and smooth rendering.
 """
 
 import sys
-import tty
-import termios
+import time
 import subprocess
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.text import Text
-
-from .banner import render_banner, render_telemetry_panel
+from .terminal import (
+    read_key, clear_screen, hide_cursor, show_cursor,
+    BOLD, DIM, RESET, CYAN, BRIGHT_CYAN, GREEN, BRIGHT_GREEN,
+    YELLOW, BRIGHT_YELLOW, RED, BRIGHT_RED, WHITE, BRIGHT_WHITE, INVERT
+)
+from .banner import render_dashboard_header
 from .hardware import get_gpu_stats, get_system_ram, get_loaded_models, get_installed_models
 from .orchestrator import get_active_model, switch_model, free_vram
-from .hub import HUB_MODELS, render_hub_table, pull_model_stream
+from .hub import HUB_MODELS, pull_model_stream, get_vram_badge
 
-console = Console()
-
-def get_char() -> str:
-    """Reads a single character from stdin without requiring Enter."""
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
+def select_from_menu(title: str, options: list[dict], default_index: int = 0) -> int | None:
+    """
+    Renders an arrow-key navigable menu with a highlighted pointer.
+    options format: [{"label": "...", "desc": "...", "badge": "..."}]
+    Returns the selected index, or None if cancelled (Esc / q).
+    """
+    selected = default_index
+    hide_cursor()
     try:
-        tty.setraw(fd)
-        ch = sys.stdin.read(1)
-        if ch == '\x1b':  # Escape sequence
-            # Non-blocking read for arrow keys
-            ch2 = sys.stdin.read(1)
-            ch3 = sys.stdin.read(1)
-            return f"\x1b{ch2}{ch3}"
-        return ch
+        while True:
+            # Re-render menu
+            sys.stdout.write("\033[H")  # Move to top-left
+            sys.stdout.write(f"\n  {BOLD}{BRIGHT_WHITE}{title}{RESET}\n")
+            sys.stdout.write(f"  {DIM}Use ↑/↓ or j/k to navigate · Enter to select · Esc/q to cancel{RESET}\n\n")
+
+            for idx, opt in enumerate(options):
+                is_selected = (idx == selected)
+                label = opt.get("label", "")
+                desc = opt.get("desc", "")
+                badge = opt.get("badge", "")
+
+                if is_selected:
+                    pointer = f"{BRIGHT_CYAN}{BOLD}❯{RESET}"
+                    label_str = f"{BRIGHT_CYAN}{BOLD}{label}{RESET}"
+                    desc_str = f"{WHITE}{desc}{RESET}"
+                    line = f"  {pointer} {label_str:<32} {desc_str} {badge}\033[K"
+                else:
+                    pointer = " "
+                    label_str = f"{WHITE}{label}{RESET}"
+                    desc_str = f"{DIM}{desc}{RESET}"
+                    line = f"  {pointer} {label_str:<32} {desc_str} {badge}\033[K"
+
+                sys.stdout.write(f"{line}\n")
+
+            sys.stdout.write("\033[J")  # Clear remaining lines below
+            sys.stdout.flush()
+
+            key = read_key()
+            if key in ('UP', 'k'):
+                selected = (selected - 1) % len(options)
+            elif key in ('DOWN', 'j'):
+                selected = (selected + 1) % len(options)
+            elif key == 'ENTER':
+                return selected
+            elif key in ('ESC', 'q', 'CTRL_C'):
+                return None
+            elif key in [str(i) for i in range(1, len(options) + 1)]:
+                return int(key) - 1
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-def render_actions_panel() -> Panel:
-    """Renders the hotkey action bar."""
-    table = Table.grid(padding=(0, 2))
-    table.add_column(style="bold cyan")
-    table.add_column(style="white")
-    table.add_column(style="bold cyan")
-    table.add_column(style="white")
-
-    table.add_row(
-        "[s] Switch Model", "[dim]Hot-swap VRAM weights[/dim]",
-        "[h] Model Hub", "[dim]Discover & pull models[/dim]"
-    )
-    table.add_row(
-        "[f] Free VRAM", "[dim]Purge GPU memory to 0 MB[/dim]",
-        "[c] CLI Chat", "[dim]Direct terminal session[/dim]"
-    )
-    table.add_row(
-        "[l] Launch Agent", "[dim]Claude Code / OpenCode / DSH[/dim]",
-        "[r] Refresh", "[dim]Update live telemetry[/dim]"
-    )
-
-    return Panel(
-        table,
-        title="[bold bright_white]Keyboard Controls[/bold bright_white]",
-        border_style="bright_blue",
-        padding=(0, 1)
-    )
+        show_cursor()
 
 def ui_switch_model():
-    """Interactive model switch menu."""
+    """Interactive model switcher with arrow-key navigation."""
     installed = get_installed_models()
     if not installed:
-        console.print("[bold red]No local models found! Pull a model using the Model Hub [h].[/bold red]")
-        console.input("\n[dim]Press Enter to continue...[/dim]")
+        clear_screen()
+        print(f"\n  {RED}No local models found! Pull one from the Model Hub first.{RESET}")
+        time.sleep(1.5)
         return
 
     active = get_active_model()
-    console.clear()
-    console.print(Panel("[bold bright_cyan]Select Model to Activate on RTX 3050 GPU[/bold bright_cyan]", border_style="cyan"))
+    options = []
+    default_idx = 0
 
-    table = Table(border_style="cyan", header_style="bold white", expand=True)
-    table.add_column("#", style="dim", width=4)
-    table.add_column("Model Name", style="bold green", width=26)
-    table.add_column("Size", width=12)
-    table.add_column("Parameters", width=14)
-    table.add_column("Quant", width=10)
-    table.add_column("Active", width=12)
-
-    for idx, m in enumerate(installed, 1):
+    for idx, m in enumerate(installed):
         name = m.get("name", "")
         size_gb = m.get("size", 0) / (1024 * 1024 * 1024)
         details = m.get("details", {})
-        param = details.get("parameter_size", "unknown")
-        quant = details.get("quantization_level", "unknown")
-        is_active = "[bold bright_green]★ ACTIVE[/bold bright_green]" if name.startswith(active) else ""
+        param = details.get("parameter_size", "")
+        quant = details.get("quantization_level", "")
+        is_active = name.startswith(active)
+        if is_active:
+            default_idx = idx
 
-        table.add_row(str(idx), name, f"{size_gb:.2f} GB", param, quant, is_active)
+        badge = f"{BRIGHT_GREEN}[ACTIVE]{RESET}" if is_active else ""
+        options.append({
+            "label": f"★ {name}" if is_active else f"• {name}",
+            "desc": f"({size_gb:.2f} GB · {param} · {quant})",
+            "badge": badge,
+            "target": name
+        })
 
-    console.print(table)
-    console.print("\n[bold cyan]Press number key to activate, or [q] to cancel:[/bold cyan] ", end="")
-    
-    ch = get_char().strip().lower()
-    if ch in ("q", "\x1b"):
-        return
-    try:
-        idx = int(ch) - 1
-        if 0 <= idx < len(installed):
-            target = installed[idx]["name"]
-            switch_model(target)
-            console.input("[dim]Press Enter to return to Hub...[/dim]")
-    except ValueError:
-        pass
+    clear_screen()
+    choice = select_from_menu("Select Active Model for RTX 3050 GPU:", options, default_index=default_idx)
+    if choice is not None:
+        target = options[choice]["target"]
+        clear_screen()
+        switch_model(target)
+        time.sleep(1.2)
 
 def ui_model_hub():
-    """Interactive Ollama Model Hub browser."""
-    console.clear()
+    """Interactive Ollama Model Hub with arrow-key navigation."""
     installed = get_installed_models()
     installed_ids = {m.get("name", "") for m in installed}
     gpu = get_gpu_stats()
     gpu_total = gpu["total_mb"] if gpu else 4096.0
 
-    table = render_hub_table(installed_ids, gpu_total)
-    console.print(table)
-    console.print("\n[bold cyan]Select model # to pull, [c] for custom name, or [q] to return:[/bold cyan] ", end="")
+    options = []
+    for m in HUB_MODELS:
+        is_installed = any(m["id"] in ins or ins.startswith(m["id"]) for ins in installed_ids)
+        badge = f"{BRIGHT_GREEN}✔ Installed{RESET}" if is_installed else f"{DIM}Available{RESET}"
+        fit_badge = get_vram_badge(m["est_vram_mb"], gpu_total)
 
-    ch = get_char().strip().lower()
-    if ch in ("q", "\x1b"):
-        return
-    elif ch == "c":
-        console.print()
-        custom = console.input("[bold cyan]Enter model identifier or GGUF (e.g. qwen2.5-coder:1.5b): [/bold cyan]").strip()
-        if custom:
-            pull_model_stream(custom)
-            console.input("\n[dim]Press Enter to return...[/dim]")
-    else:
-        try:
-            idx = int(ch) - 1
-            if 0 <= idx < len(HUB_MODELS):
-                target = HUB_MODELS[idx]["id"]
-                pull_model_stream(target)
-                console.input("\n[dim]Press Enter to return...[/dim]")
-        except ValueError:
-            pass
+        options.append({
+            "label": m["id"],
+            "desc": f"{m['size_gb']:.1f} GB  {fit_badge}  {DIM}{m['description'][:38]}{RESET}",
+            "badge": badge,
+            "id": m["id"]
+        })
+
+    options.append({
+        "label": "[Custom Model]",
+        "desc": "Enter custom model tag or HuggingFace GGUF",
+        "badge": "",
+        "id": "CUSTOM"
+    })
+
+    clear_screen()
+    choice = select_from_menu("Ollama Model Hub — Browse & Pull Models:", options)
+    if choice is not None:
+        target_id = options[choice]["id"]
+        clear_screen()
+        if target_id == "CUSTOM":
+            show_cursor()
+            custom = input(f"\n  {BOLD}{CYAN}Enter model name to pull (e.g. qwen2.5-coder:1.5b): {RESET}").strip()
+            if custom:
+                pull_model_stream(custom)
+                input(f"\n  {DIM}Press Enter to continue...{RESET}")
+        else:
+            pull_model_stream(target_id)
+            input(f"\n  {DIM}Press Enter to continue...{RESET}")
 
 def ui_launch_agent():
-    """Interactive agent launcher menu."""
-    console.clear()
+    """Interactive agent client launcher with arrow-key selection."""
     active = get_active_model()
-    console.print(Panel(f"[bold bright_cyan]Launch Coding Agent with Active Model: [bold green]{active}[/bold green][/bold bright_cyan]", border_style="cyan"))
+    options = [
+        {
+            "label": "󰌌  Claude Code",
+            "desc": f"Wired to local {active} via Anthropic Messages endpoint",
+            "badge": "",
+            "action": "claude"
+        },
+        {
+            "label": "󰊠  OpenCode CLI",
+            "desc": f"Wired to ollama/{active}",
+            "badge": "",
+            "action": "opencode"
+        },
+        {
+            "label": "󰒋  DeepSeek Harness (Web)",
+            "desc": "Launch browser interface at http://127.0.0.1:3080",
+            "badge": "",
+            "action": "dsh_web"
+        },
+        {
+            "label": "󰒋  DeepSeek Harness (CLI)",
+            "desc": "Run headless prompt from terminal",
+            "badge": "",
+            "action": "dsh_cli"
+        }
+    ]
 
-    table = Table.grid(padding=(1, 2))
-    table.add_column(style="bold bright_green")
-    table.add_column(style="bold white")
-    table.add_column(style="dim")
+    clear_screen()
+    choice = select_from_menu(f"Launch Coding Agent (Active Model: {active}):", options)
+    if choice is not None:
+        act = options[choice]["action"]
+        clear_screen()
+        if act == "claude":
+            subprocess.run(["claude", "--model", active])
+        elif act == "opencode":
+            subprocess.run(["opencode", "--model", f"ollama/{active}"])
+        elif act == "dsh_web":
+            print(f"\n  {CYAN}Starting DeepSeek Harness Web UI...{RESET}")
+            subprocess.run(["dsh", "web"])
+            input(f"\n  {DIM}Press Enter to return...{RESET}")
+        elif act == "dsh_cli":
+            show_cursor()
+            prompt = input(f"\n  {BOLD}{CYAN}Enter prompt for DSH: {RESET}").strip()
+            if prompt:
+                subprocess.run(["dsh", "headless", prompt])
+                input(f"\n  {DIM}Press Enter to return...{RESET}")
 
-    table.add_row("[1]", "Claude Code (claude)", f"Runs native Claude Code wired to local {active}")
-    table.add_row("[2]", "OpenCode CLI (opencode)", f"Runs OpenCode terminal agent on ollama/{active}")
-    table.add_row("[3]", "DeepSeek Harness Web (dsh web)", "Launches browser UI at http://127.0.0.1:3080")
-    table.add_row("[q]", "Cancel", "Return to main dashboard")
+def ui_service_control():
+    """Interactive service control menu."""
+    options = [
+        {"label": "▶  Start Service", "desc": "systemctl --user start ollama", "action": "start"},
+        {"label": "■  Stop Service", "desc": "systemctl --user stop ollama", "action": "stop"},
+        {"label": "↺  Restart Service", "desc": "systemctl --user restart ollama", "action": "restart"},
+        {"label": "📋 View Service Logs", "desc": "journalctl recent 35 lines", "action": "logs"},
+    ]
 
-    console.print(table)
-    console.print("\n[bold cyan]Press key [1-3, q]:[/bold cyan] ", end="")
-    ch = get_char().strip().lower()
-
-    if ch == "1":
-        console.clear()
-        subprocess.run(["claude", "--model", active])
-    elif ch == "2":
-        console.clear()
-        subprocess.run(["opencode", "--model", f"ollama/{active}"])
-    elif ch == "3":
-        console.print("\n[cyan]Starting DeepSeek Harness Web UI...[/cyan]")
-        subprocess.run(["dsh", "web"])
-        console.input("[dim]Press Enter to return...[/dim]")
+    clear_screen()
+    choice = select_from_menu("Ollama Background Service Management:", options)
+    if choice is not None:
+        action = options[choice]["action"]
+        clear_screen()
+        if action in ("start", "stop", "restart"):
+            print(f"\n  {CYAN}Executing: systemctl --user {action} ollama...{RESET}")
+            subprocess.run(["systemctl", "--user", action, "ollama"])
+            time.sleep(0.8)
+        elif action == "logs":
+            subprocess.run(["journalctl", "--user", "-u", "ollama", "-n", "35", "--no-pager"])
+            input(f"\n  {DIM}Press Enter to return...{RESET}")
 
 def run_interactive_dashboard():
-    """Main loop for the interactive terminal dashboard."""
-    while True:
-        console.clear()
-        active = get_active_model()
-        gpu = get_gpu_stats()
-        ram = get_system_ram()
-        loaded = get_loaded_models()
+    """
+    Main interactive dashboard loop.
+    Smooth, flicker-free, arrow-key navigable interface.
+    """
+    selected_idx = 0
+    main_options = [
+        {"label": "󰒋  Switch Model", "desc": "Hot-swap active weights on RTX 3050 GPU", "key": "switch"},
+        {"label": "󰊠  Model Hub", "desc": "Browse curated Ollama models with VRAM badges", "key": "hub"},
+        {"label": "󰌌  Launch Agent", "desc": "Claude Code, OpenCode, DeepSeek Harness", "key": "launch"},
+        {"label": "󰓅  Purge VRAM", "desc": "Instantly free 100% GPU memory (0 MB allocated)", "key": "free"},
+        {"label": "󰭹  Direct Chat", "desc": "Direct interactive terminal session with active model", "key": "chat"},
+        {"label": "󰐥  Service Control", "desc": "Manage Ollama systemd background service", "key": "service"},
+        {"label": "󰅖  Quit", "desc": "Exit llm-ctl", "key": "quit"}
+    ]
 
-        # Render Banner & Hardware Cards
-        console.print(render_banner(active_model=active))
-        console.print(render_telemetry_panel(gpu, ram, loaded))
-        console.print(render_actions_panel())
-        console.print("\n[dim]Press [q] or [Ctrl+C] to exit[/dim] | [bold cyan]Input:[/bold cyan] ", end="")
+    clear_screen()
+    hide_cursor()
+    status_msg = ""
 
-        try:
-            ch = get_char().strip().lower()
-        except (KeyboardInterrupt, EOFError):
-            console.print("\n[dim]Exited llm-ctl. Service remains active.[/dim]")
-            sys.exit(0)
+    try:
+        while True:
+            active = get_active_model()
+            gpu = get_gpu_stats()
+            ram = get_system_ram()
+            loaded = get_loaded_models()
 
-        if ch in ("q", "\x03", "\x1b"):
-            console.print("\n[dim]Exited llm-ctl. Service remains active.[/dim]")
-            sys.exit(0)
-        elif ch in ("s", "1"):
-            ui_switch_model()
-        elif ch in ("h", "2"):
-            ui_model_hub()
-        elif ch in ("f", "3"):
-            evicted = free_vram()
-            console.print(f"\n[bold green]✔ Evicted {len(evicted)} models. 100% GPU VRAM is free![/bold green]")
-            import time
-            time.sleep(1)
-        elif ch in ("c", "4"):
-            console.clear()
-            console.print(f"[bold cyan]Connecting to {active}... (Type '/bye' to exit)[/bold cyan]\n")
-            subprocess.run(["ollama", "run", active])
-        elif ch in ("l", "5"):
-            ui_launch_agent()
-        elif ch == "r":
-            continue
+            # Render top header
+            sys.stdout.write("\033[H")  # Move to home
+            header = render_dashboard_header(active, gpu, ram, loaded)
+            sys.stdout.write(header)
+
+            if status_msg:
+                sys.stdout.write(f"  {status_msg}\033[K\n\n")
+                status_msg = ""
+            else:
+                sys.stdout.write(f"  {DIM}Navigate: ↑/↓ or j/k · Select: Enter · Quick keys: 1-7, q{RESET}\033[K\n\n")
+
+            # Render menu options
+            for idx, opt in enumerate(main_options):
+                is_selected = (idx == selected_idx)
+                label = opt["label"]
+                desc = opt["desc"]
+
+                if is_selected:
+                    pointer = f"{BRIGHT_CYAN}{BOLD}❯{RESET}"
+                    label_str = f"{BRIGHT_CYAN}{BOLD}{label}{RESET}"
+                    desc_str = f"{WHITE}{desc}{RESET}"
+                    line = f"  {pointer} {label_str:<30} {desc_str}\033[K"
+                else:
+                    pointer = " "
+                    label_str = f"{WHITE}{label}{RESET}"
+                    desc_str = f"{DIM}{desc}{RESET}"
+                    line = f"  {pointer} {label_str:<30} {desc_str}\033[K"
+
+                sys.stdout.write(f"{line}\n")
+
+            sys.stdout.write("\033[J")
+            sys.stdout.flush()
+
+            # Non-blocking key read
+            key = read_key()
+
+            if key in ('UP', 'k'):
+                selected_idx = (selected_idx - 1) % len(main_options)
+            elif key in ('DOWN', 'j'):
+                selected_idx = (selected_idx + 1) % len(main_options)
+            elif key in ('ESC', 'q', 'CTRL_C'):
+                clear_screen()
+                print(f"  {DIM}llm-ctl exited. Background services remain active.{RESET}\n")
+                break
+            elif key == 'ENTER':
+                action_key = main_options[selected_idx]["key"]
+                if action_key == "quit":
+                    clear_screen()
+                    print(f"  {DIM}llm-ctl exited. Background services remain active.{RESET}\n")
+                    break
+                elif action_key == "switch":
+                    ui_switch_model()
+                    clear_screen()
+                elif action_key == "hub":
+                    ui_model_hub()
+                    clear_screen()
+                elif action_key == "launch":
+                    ui_launch_agent()
+                    clear_screen()
+                elif action_key == "free":
+                    evicted = free_vram()
+                    status_msg = f"{BRIGHT_GREEN}✔ Evicted {len(evicted)} model(s). GPU VRAM is 100% free!{RESET}"
+                elif action_key == "chat":
+                    clear_screen()
+                    show_cursor()
+                    print(f"\n  {BOLD}{CYAN}Connecting to {active}... (Type '/bye' to exit){RESET}\n")
+                    subprocess.run(["ollama", "run", active])
+                    clear_screen()
+                    hide_cursor()
+                elif action_key == "service":
+                    ui_service_control()
+                    clear_screen()
+            elif key in ('s', '1'):
+                ui_switch_model()
+                clear_screen()
+            elif key in ('h', '2'):
+                ui_model_hub()
+                clear_screen()
+            elif key in ('l', '3'):
+                ui_launch_agent()
+                clear_screen()
+            elif key in ('f', '4'):
+                evicted = free_vram()
+                status_msg = f"{BRIGHT_GREEN}✔ Evicted {len(evicted)} model(s). GPU VRAM is 100% free!{RESET}"
+            elif key in ('c', '5'):
+                clear_screen()
+                show_cursor()
+                print(f"\n  {BOLD}{CYAN}Connecting to {active}... (Type '/bye' to exit){RESET}\n")
+                subprocess.run(["ollama", "run", active])
+                clear_screen()
+                hide_cursor()
+            elif key in ('6',):
+                ui_service_control()
+                clear_screen()
+            elif key in ('7',):
+                clear_screen()
+                print(f"  {DIM}llm-ctl exited. Background services remain active.{RESET}\n")
+                break
+    finally:
+        show_cursor()
