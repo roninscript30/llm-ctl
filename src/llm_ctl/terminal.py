@@ -9,7 +9,6 @@ import termios
 import select
 import atexit
 
-# Global storage for terminal settings to ensure restoration
 _ORIGINAL_SETTINGS = None
 _RAW_ACTIVE = False
 
@@ -24,7 +23,7 @@ def init_terminal_cleanup():
 
     def _cleanup():
         restore_terminal()
-        sys.stdout.write("\033[?25h\033[0m")  # Show cursor & reset formatting
+        sys.stdout.write("\033[?25h\033[0m")
         sys.stdout.flush()
 
     atexit.register(_cleanup)
@@ -52,9 +51,10 @@ def restore_terminal():
 
 def read_key() -> str:
     """
-    Reads a single keypress or escape sequence with a non-blocking timeout.
-    Returns: 'UP', 'DOWN', 'LEFT', 'RIGHT', 'ENTER', 'ESC', 'BACKSPACE',
-             or single characters ('q', 'j', 'k', '1', etc.).
+    Reads a single keypress or escape sequence with non-blocking polling.
+    Properly parses xterm/kitty arrow keys (\x1b[A, \x1bOA, etc.).
+    Returns: 'UP', 'DOWN', 'LEFT', 'RIGHT', 'ENTER', 'SPACE', 'ESC', 'BACKSPACE',
+             'CTRL_C', 'CTRL_D', or the raw single character.
     """
     if not sys.stdin.isatty():
         return sys.stdin.read(1)
@@ -62,27 +62,42 @@ def read_key() -> str:
     set_raw_mode()
     try:
         ch = sys.stdin.read(1)
-        if ch == '\x1b':
-            # Check if there are trailing escape characters within 40ms
-            r, _, _ = select.select([sys.stdin], [], [], 0.04)
-            if r:
-                seq = sys.stdin.read(2)
-                if seq == '[A': return 'UP'
-                if seq == '[B': return 'DOWN'
-                if seq == '[C': return 'RIGHT'
-                if seq == '[D': return 'LEFT'
-                if seq == '[H': return 'HOME'
-                if seq == '[F': return 'END'
-                return 'ESC_SEQ'
-            return 'ESC'
-        elif ch in ('\r', '\n'):
-            return 'ENTER'
-        elif ch in ('\x7f', '\x08'):
-            return 'BACKSPACE'
-        elif ch == '\x03':  # Ctrl+C
+        if ch == '\x03':  # Ctrl+C
             return 'CTRL_C'
         elif ch == '\x04':  # Ctrl+D
             return 'CTRL_D'
+        elif ch in ('\r', '\n'):
+            return 'ENTER'
+        elif ch == ' ':
+            return 'SPACE'
+        elif ch in ('\x7f', '\x08'):
+            return 'BACKSPACE'
+        elif ch == '\x1b':
+            # Check for trailing escape characters within 40ms
+            r, _, _ = select.select([sys.stdin], [], [], 0.04)
+            if not r:
+                return 'ESC'
+
+            seq1 = sys.stdin.read(1)
+            if seq1 in ('[', 'O'):
+                r2, _, _ = select.select([sys.stdin], [], [], 0.04)
+                if r2:
+                    code = sys.stdin.read(1)
+                    # Drain any remaining bytes in multi-byte sequence (e.g. \x1b[1;2A)
+                    while True:
+                        r_more, _, _ = select.select([sys.stdin], [], [], 0.01)
+                        if r_more:
+                            sys.stdin.read(1)
+                        else:
+                            break
+
+                    if code in ('A',): return 'UP'
+                    if code in ('B',): return 'DOWN'
+                    if code in ('C',): return 'RIGHT'
+                    if code in ('D',): return 'LEFT'
+                    if code in ('H',): return 'HOME'
+                    if code in ('F',): return 'END'
+            return 'ESC'
         return ch
     finally:
         restore_terminal()
@@ -104,7 +119,6 @@ BOLD = "\033[1m"
 DIM = "\033[2m"
 ITALIC = "\033[3m"
 RESET = "\033[0m"
-INVERT = "\033[7m"
 
 def clear_screen():
     sys.stdout.write("\033[2J\033[H")

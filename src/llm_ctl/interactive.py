@@ -1,5 +1,6 @@
 """
-Modern, keyboard-navigable interactive terminal UI with arrow-key controls and smooth rendering.
+Modern, keyboard-navigable interactive terminal UI with arrow-key controls and strict exit lifecycle.
+Strict Rule: Only Ctrl+C or Ctrl+D terminates the CLI. All other keys navigate or stay within the app.
 """
 
 import sys
@@ -8,7 +9,7 @@ import subprocess
 from .terminal import (
     read_key, clear_screen, hide_cursor, show_cursor,
     BOLD, DIM, RESET, CYAN, BRIGHT_CYAN, GREEN, BRIGHT_GREEN,
-    YELLOW, BRIGHT_YELLOW, RED, BRIGHT_RED, WHITE, BRIGHT_WHITE, INVERT
+    YELLOW, BRIGHT_YELLOW, RED, BRIGHT_RED, WHITE, BRIGHT_WHITE
 )
 from .banner import render_dashboard_header
 from .hardware import get_gpu_stats, get_system_ram, get_loaded_models, get_installed_models
@@ -17,18 +18,19 @@ from .hub import HUB_MODELS, pull_model_stream, get_vram_badge
 
 def select_from_menu(title: str, options: list[dict], default_index: int = 0) -> int | None:
     """
-    Renders an arrow-key navigable menu with a highlighted pointer.
-    options format: [{"label": "...", "desc": "...", "badge": "..."}]
-    Returns the selected index, or None if cancelled (Esc / q).
+    Arrow-key navigable menu.
+    - Up/Down or k/j: Navigate options.
+    - Enter or Space: Confirm selection.
+    - Esc, q, Left, Backspace: Return to main menu (does NOT quit app).
+    - Ctrl+C, Ctrl+D: Clean exit from whole program.
     """
     selected = default_index
     hide_cursor()
     try:
         while True:
-            # Re-render menu
             sys.stdout.write("\033[H")  # Move to top-left
             sys.stdout.write(f"\n  {BOLD}{BRIGHT_WHITE}{title}{RESET}\n")
-            sys.stdout.write(f"  {DIM}Use ↑/↓ or j/k to navigate · Enter to select · Esc/q to cancel{RESET}\n\n")
+            sys.stdout.write(f"  {DIM}Navigate: ↑/↓ or j/k · Select: Enter/Space · Back: Esc/q · Quit: Ctrl+C{RESET}\n\n")
 
             for idx, opt in enumerate(options):
                 is_selected = (idx == selected)
@@ -49,18 +51,22 @@ def select_from_menu(title: str, options: list[dict], default_index: int = 0) ->
 
                 sys.stdout.write(f"{line}\n")
 
-            sys.stdout.write("\033[J")  # Clear remaining lines below
+            sys.stdout.write("\033[J")
             sys.stdout.flush()
 
             key = read_key()
-            if key in ('UP', 'k'):
+            if key in ('CTRL_C', 'CTRL_D'):
+                clear_screen()
+                print(f"  {DIM}llm-ctl exited via interrupt. Background services remain active.{RESET}\n")
+                sys.exit(0)
+            elif key in ('UP', 'k'):
                 selected = (selected - 1) % len(options)
             elif key in ('DOWN', 'j'):
                 selected = (selected + 1) % len(options)
-            elif key == 'ENTER':
+            elif key in ('ENTER', 'SPACE'):
                 return selected
-            elif key in ('ESC', 'q', 'CTRL_C'):
-                return None
+            elif key in ('ESC', 'q', 'LEFT', 'BACKSPACE'):
+                return None  # Return to main dashboard
             elif key in [str(i) for i in range(1, len(options) + 1)]:
                 return int(key) - 1
     finally:
@@ -142,10 +148,10 @@ def ui_model_hub():
             custom = input(f"\n  {BOLD}{CYAN}Enter model name to pull (e.g. qwen2.5-coder:1.5b): {RESET}").strip()
             if custom:
                 pull_model_stream(custom)
-                input(f"\n  {DIM}Press Enter to continue...{RESET}")
+                input(f"\n  {DIM}Press Enter to return to Hub...{RESET}")
         else:
             pull_model_stream(target_id)
-            input(f"\n  {DIM}Press Enter to continue...{RESET}")
+            input(f"\n  {DIM}Press Enter to return to Hub...{RESET}")
 
 def ui_launch_agent():
     """Interactive agent client launcher with arrow-key selection."""
@@ -217,12 +223,13 @@ def ui_service_control():
             time.sleep(0.8)
         elif action == "logs":
             subprocess.run(["journalctl", "--user", "-u", "ollama", "-n", "35", "--no-pager"])
-            input(f"\n  {DIM}Press Enter to return...{RESET}")
+            input(f"\n  {DIM}Press Enter to return to Hub...{RESET}")
 
 def run_interactive_dashboard():
     """
     Main interactive dashboard loop.
-    Smooth, flicker-free, arrow-key navigable interface.
+    STRICT RULE: Only Ctrl+C or Ctrl+D exits this program.
+    Any other key navigates or maintains the dashboard loop.
     """
     selected_idx = 0
     main_options = [
@@ -232,7 +239,6 @@ def run_interactive_dashboard():
         {"label": "󰓅  Purge VRAM", "desc": "Instantly free 100% GPU memory (0 MB allocated)", "key": "free"},
         {"label": "󰭹  Direct Chat", "desc": "Direct interactive terminal session with active model", "key": "chat"},
         {"label": "󰐥  Service Control", "desc": "Manage Ollama systemd background service", "key": "service"},
-        {"label": "󰅖  Quit", "desc": "Exit llm-ctl", "key": "quit"}
     ]
 
     clear_screen()
@@ -247,7 +253,7 @@ def run_interactive_dashboard():
             loaded = get_loaded_models()
 
             # Render top header
-            sys.stdout.write("\033[H")  # Move to home
+            sys.stdout.write("\033[H")
             header = render_dashboard_header(active, gpu, ram, loaded)
             sys.stdout.write(header)
 
@@ -255,7 +261,7 @@ def run_interactive_dashboard():
                 sys.stdout.write(f"  {status_msg}\033[K\n\n")
                 status_msg = ""
             else:
-                sys.stdout.write(f"  {DIM}Navigate: ↑/↓ or j/k · Select: Enter · Quick keys: 1-7, q{RESET}\033[K\n\n")
+                sys.stdout.write(f"  {DIM}Navigate: ↑/↓ or j/k · Select: Enter/Space · Quick keys: 1-6 · {BOLD}Exit: Ctrl+C / Ctrl+D only{RESET}\033[K\n\n")
 
             # Render menu options
             for idx, opt in enumerate(main_options):
@@ -279,24 +285,30 @@ def run_interactive_dashboard():
             sys.stdout.write("\033[J")
             sys.stdout.flush()
 
-            # Non-blocking key read
-            key = read_key()
+            # Read key safely
+            try:
+                key = read_key()
+            except (KeyboardInterrupt, EOFError):
+                clear_screen()
+                print(f"  {DIM}llm-ctl exited via interrupt. Background services remain active.{RESET}\n")
+                sys.exit(0)
 
-            if key in ('UP', 'k'):
+            # STRICT EXIT: Only Ctrl+C or Ctrl+D exits the program!
+            if key in ('CTRL_C', 'CTRL_D'):
+                clear_screen()
+                print(f"  {DIM}llm-ctl exited via interrupt. Background services remain active.{RESET}\n")
+                sys.exit(0)
+
+            # Navigation
+            elif key in ('UP', 'k'):
                 selected_idx = (selected_idx - 1) % len(main_options)
             elif key in ('DOWN', 'j'):
                 selected_idx = (selected_idx + 1) % len(main_options)
-            elif key in ('ESC', 'q', 'CTRL_C'):
-                clear_screen()
-                print(f"  {DIM}llm-ctl exited. Background services remain active.{RESET}\n")
-                break
-            elif key == 'ENTER':
+
+            # Trigger Action on ENTER or SPACE
+            elif key in ('ENTER', 'SPACE'):
                 action_key = main_options[selected_idx]["key"]
-                if action_key == "quit":
-                    clear_screen()
-                    print(f"  {DIM}llm-ctl exited. Background services remain active.{RESET}\n")
-                    break
-                elif action_key == "switch":
+                if action_key == "switch":
                     ui_switch_model()
                     clear_screen()
                 elif action_key == "hub":
@@ -311,13 +323,15 @@ def run_interactive_dashboard():
                 elif action_key == "chat":
                     clear_screen()
                     show_cursor()
-                    print(f"\n  {BOLD}{CYAN}Connecting to {active}... (Type '/bye' to exit){RESET}\n")
+                    print(f"\n  {BOLD}{CYAN}Connecting to {active}... (Type '/bye' to exit chat and return to Hub){RESET}\n")
                     subprocess.run(["ollama", "run", active])
                     clear_screen()
                     hide_cursor()
                 elif action_key == "service":
                     ui_service_control()
                     clear_screen()
+
+            # Direct Number Shortcuts
             elif key in ('s', '1'):
                 ui_switch_model()
                 clear_screen()
@@ -333,16 +347,20 @@ def run_interactive_dashboard():
             elif key in ('c', '5'):
                 clear_screen()
                 show_cursor()
-                print(f"\n  {BOLD}{CYAN}Connecting to {active}... (Type '/bye' to exit){RESET}\n")
+                print(f"\n  {BOLD}{CYAN}Connecting to {active}... (Type '/bye' to exit chat and return to Hub){RESET}\n")
                 subprocess.run(["ollama", "run", active])
                 clear_screen()
                 hide_cursor()
             elif key in ('6',):
                 ui_service_control()
                 clear_screen()
-            elif key in ('7',):
-                clear_screen()
-                print(f"  {DIM}llm-ctl exited. Background services remain active.{RESET}\n")
-                break
+
+            # If user presses Esc or q in main menu: DO NOT QUIT! Show reminder.
+            elif key in ('ESC', 'q'):
+                status_msg = f"{YELLOW}ℹ To exit llm-ctl, press Ctrl+C or Ctrl+D.{RESET}"
+
+            # Any other unknown key: DO NOT QUIT! Just ignore.
+            else:
+                continue
     finally:
         show_cursor()
