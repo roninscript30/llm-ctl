@@ -4,27 +4,37 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-ctl"
-version = "0.3.0"
-description = "Modern Developer CLI for Local LLM Management, VRAM Orchestration & Model Discovery"
+version = "1.0.0"
+description = "Lightweight, command-driven Linux CLI for local LLM lifecycle management, runtime control, and coding-agent integration"
 readme = "README.md"
 authors = [
-    { name = "Marudhu", email = "marudhu@local" }
+    { name = "Marudhu (roninscript30)", email = "marudhu3021@gmail.com" }
 ]
 license = { text = "MIT" }
 requires-python = ">=3.9"
 dependencies = [
     "rich>=13.0.0",
 ]
-keywords = ["llm", "ollama", "vram", "cli", "ai", "deepseek", "qwen", "local-ai"]
+keywords = ["llm", "ollama", "vram", "cli", "ai", "deepseek", "qwen", "local-ai", "terminal"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Monitoring",
 ]
+
+[project.urls]
+Homepage = "https://github.com/roninscript30/llm-ctl"
+Repository = "https://github.com/roninscript30/llm-ctl"
+Issues = "https://github.com/roninscript30/llm-ctl/issues"
 
 [project.scripts]
 llm = "llm_ctl.cli:main"

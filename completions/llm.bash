@@ -5,7 +5,7 @@ _llm_completion() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    subcommands="status info ps top ls list models use switch free unload clear hub pull rm delete launch claude cc opencode oc dsh deepseek chat sync bench service help"
+    subcommands="status info models ls list switch use pull chat start run stop restart unload free evict remove rm delete agents launch claude cc opencode oc dsh deepseek doctor config help"
     agents="claude opencode dsh"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
@@ -14,17 +14,17 @@ _llm_completion() {
     fi
 
     case "$prev" in
-        use|switch|rm|delete|chat)
+        switch|use|unload|remove|rm|delete|chat)
             models=$(ollama list 2>/dev/null | awk 'NR>1 {print $1}')
             COMPREPLY=( $(compgen -W "${models}" -- "$cur") )
             return 0
             ;;
-        launch)
+        agents|launch)
             COMPREPLY=( $(compgen -W "${agents}" -- "$cur") )
             return 0
             ;;
-        service)
-            COMPREPLY=( $(compgen -W "start stop restart status logs" -- "$cur") )
+        config)
+            COMPREPLY=( $(compgen -W "show path set view" -- "$cur") )
             return 0
             ;;
     esac

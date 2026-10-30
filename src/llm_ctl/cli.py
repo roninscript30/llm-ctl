@@ -1,7 +1,7 @@
 """
 Main CLI router and subcommand dispatcher for llm-ctl.
-Optimized for SpaceMono-Regular font and matches the reference design.
-Provides full non-interactive scripting, JSON output, and robust error handling.
+Optimized for SpaceMono-Regular font and matches the refined terminal design.
+Provides full non-interactive scripting, JSON output, and robust runtime controls.
 """
 
 import sys
@@ -22,12 +22,20 @@ from .hardware import (
 )
 from .orchestrator import (
     get_active_model, save_active_model, switch_model,
-    free_vram, sync_all_configs, get_model_status, CONFIG_FILE
+    sync_all_configs, get_model_status, CONFIG_FILE
+)
+from .runtime import (
+    start_server, stop_server, restart_server,
+    unload_model, unload_all_models, remove_model,
+    get_server_version
 )
 from .hub import HUB_MODELS, render_hub_table, pull_model_stream
 from .interactive import run_interactive_repl
 from .doctor import run_doctor
+from .paths import ensure_directories
 from .terminal import BOLD, DIM, RESET, BRIGHT_GREEN, CYAN, WHITE, YELLOW, RED
+
+ensure_directories()
 
 def print_status(json_output: bool = False):
     """Outputs current hardware status, active model, and loaded VRAM models."""
@@ -37,6 +45,7 @@ def print_status(json_output: bool = False):
     ram = get_system_ram()
     loaded = get_loaded_models()
     installed = get_installed_models()
+    version = get_server_version() if is_active else None
 
     if json_output:
         data = {
@@ -44,6 +53,7 @@ def print_status(json_output: bool = False):
             "active_model_status": get_model_status(active),
             "endpoint": OLLAMA_HOST,
             "service_active": is_active,
+            "version": version,
             "gpu": gpu,
             "system_ram": ram,
             "loaded_models": loaded,
@@ -52,11 +62,11 @@ def print_status(json_output: bool = False):
         print(json.dumps(data, indent=2))
         return
 
-    # Render reference screen layout
+    # Render clean terminal layout
     print()
     print(render_reference_banner())
     print()
-    print(render_reference_status_card(is_active, OLLAMA_HOST, gpu, ram, active, loaded, installed))
+    print(render_reference_status_card(is_active, OLLAMA_HOST, gpu, ram, active, loaded, installed, version_str=version))
     print()
     print(render_reference_quick_commands())
     print()
@@ -159,6 +169,24 @@ def print_help():
     """Prints help message."""
     print()
     print(render_reference_quick_commands())
+    print(f"\n  {BOLD}Usage:{RESET} llm-ctl <command> [options]")
+    print(f"\n  {BOLD}Runtime Server Controls:{RESET}")
+    print(f"    start / run        Start local Ollama server")
+    print(f"    stop               Stop local Ollama server gracefully")
+    print(f"    restart            Restart local Ollama server")
+    print(f"\n  {BOLD}Model Management:{RESET}")
+    print(f"    models / ls        List installed models (supports --json)")
+    print(f"    switch <model>     Switch active model and pre-warm into VRAM")
+    print(f"    pull <model>       Download model weights from hub with progress")
+    print(f"    unload [model]     Unload model(s) from VRAM without deleting files")
+    print(f"    remove <model>     Permanently delete model from disk (-y to skip prompt)")
+    print(f"    chat [model]       Start interactive chat with local model")
+    print(f"\n  {BOLD}Integrations & Diagnostics:{RESET}")
+    print(f"    status             Show system & model status (supports --json)")
+    print(f"    doctor             Diagnose environment, drivers, agents, config")
+    print(f"    agents <name>      Launch coding agent (claude, opencode, dsh)")
+    print(f"    config [show|set]  Inspect or edit configuration (supports --json)")
+    print(f"    help               Show this command reference")
     print()
 
 def main():
@@ -207,6 +235,48 @@ def main():
         if not success:
             sys.exit(1)
 
+    elif cmd in ("start", "run"):
+        print(f"\n  {CYAN}Starting Ollama server...{RESET}")
+        ok, msg = start_server()
+        if ok:
+            print(f"  {BRIGHT_GREEN}✔ {msg}{RESET}\n")
+        else:
+            print(f"  {RED}✖ {msg}{RESET}\n")
+            sys.exit(1)
+
+    elif cmd == "stop":
+        print(f"\n  {YELLOW}Stopping Ollama server...{RESET}")
+        ok, msg = stop_server()
+        if ok:
+            print(f"  {BRIGHT_GREEN}✔ {msg}{RESET}\n")
+        else:
+            print(f"  {RED}✖ {msg}{RESET}\n")
+            sys.exit(1)
+
+    elif cmd == "restart":
+        print(f"\n  {CYAN}Restarting Ollama server...{RESET}")
+        ok, msg = restart_server()
+        if ok:
+            print(f"  {BRIGHT_GREEN}✔ {msg}{RESET}\n")
+        else:
+            print(f"  {RED}✖ {msg}{RESET}\n")
+            sys.exit(1)
+
+    elif cmd in ("unload", "free", "evict"):
+        if rest:
+            ok, msg = unload_model(rest[0])
+            if ok:
+                print(f"\n  {BRIGHT_GREEN}✔ {msg}{RESET}\n")
+            else:
+                print(f"\n  {RED}✖ {msg}{RESET}\n")
+                sys.exit(1)
+        else:
+            evicted = unload_all_models()
+            if evicted:
+                print(f"\n  {BRIGHT_GREEN}✔ Unloaded {len(evicted)} model(s): {', '.join(evicted)}. GPU VRAM is 100% free!{RESET}\n")
+            else:
+                print(f"\n  {BRIGHT_GREEN}✔ GPU VRAM is completely free (0 models loaded).{RESET}\n")
+
     elif cmd in ("remove", "rm", "delete"):
         if not rest:
             print(f"\n  {RED}Usage:{RESET} llm remove <model_name> [-y]\n")
@@ -214,24 +284,17 @@ def main():
         target = rest[0]
         force = "-y" in rest or "--yes" in rest
         if not force:
-            confirm = input(f"  {YELLOW}Are you sure you want to remove model '{target}'? [y/N]: {RESET}").strip().lower()
+            confirm = input(f"  {YELLOW}Are you sure you want to permanently delete model weights for '{target}'? [y/N]: {RESET}").strip().lower()
             if confirm not in ("y", "yes"):
                 print(f"  {DIM}Operation cancelled.{RESET}\n")
                 return
 
-        res = subprocess.run(["ollama", "rm", target], capture_output=True, text=True)
-        if res.returncode == 0:
-            print(f"  {BRIGHT_GREEN}✔ Removed {target}{RESET}\n")
+        ok, msg = remove_model(target)
+        if ok:
+            print(f"  {BRIGHT_GREEN}✔ {msg}{RESET}\n")
         else:
-            print(f"  {RED}Failed to remove {target}:{RESET} {res.stderr.strip()}\n")
+            print(f"  {RED}✖ {msg}{RESET}\n")
             sys.exit(1)
-
-    elif cmd in ("free", "purge", "unload"):
-        evicted = free_vram()
-        if evicted:
-            print(f"\n  {BRIGHT_GREEN}✔ Evicted {len(evicted)} model(s): {', '.join(evicted)}. GPU VRAM is 100% free!{RESET}\n")
-        else:
-            print(f"\n  {BRIGHT_GREEN}✔ GPU VRAM is completely free (0 models loaded).{RESET}\n")
 
     elif cmd == "doctor":
         run_doctor()
@@ -252,17 +315,6 @@ def main():
 
     elif cmd in ("dsh", "deepseek"):
         cmd_launch(["dsh"] + rest)
-
-    elif cmd == "run":
-        print(f"\n  {CYAN}Starting Ollama systemd background service...{RESET}")
-        res = subprocess.run(["systemctl", "--user", "start", "ollama"], capture_output=True, text=True)
-        time.sleep(0.5)
-        if get_service_status():
-            print(f"  {BRIGHT_GREEN}✔ Ollama service active{RESET}\n")
-        else:
-            print(f"  {YELLOW}Ollama service failed to start via systemd:{RESET} {res.stderr.strip()}\n")
-            print(f"  {DIM}Try running manually: 'ollama serve'{RESET}\n")
-            sys.exit(1)
 
     elif cmd == "config":
         if is_json:

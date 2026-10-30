@@ -9,10 +9,10 @@ import subprocess
 import urllib.request
 from rich.console import Console
 from .hardware import get_loaded_models, get_installed_models, get_service_status, OLLAMA_HOST
+from .paths import CONFIG_DIR, CONFIG_FILE, ensure_directories
 
 console = Console()
-CONFIG_DIR = os.path.expanduser("~/.config/llm-ctl")
-CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+ensure_directories()
 
 def notify(title: str, message: str, urgency: str = "normal"):
     """Dispatches a desktop notification via notify-send if available."""

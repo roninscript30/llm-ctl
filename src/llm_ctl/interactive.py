@@ -1,6 +1,6 @@
 """
-Interactive REPL Shell matching the reference visual design.
-Provides prompt navigation, persistent history, tab-completion, and command execution.
+Interactive REPL Shell matching the refined terminal design.
+Provides prompt navigation, persistent history, tab-completion, and full runtime controls.
 Strict quit policy: only exits on explicit exit/quit command or Ctrl+C / Ctrl+D.
 """
 
@@ -29,17 +29,21 @@ from .hardware import (
 )
 from .orchestrator import (
     get_active_model, save_active_model, switch_model,
-    free_vram, sync_all_configs, get_model_status, CONFIG_FILE
+    sync_all_configs, get_model_status, CONFIG_FILE
+)
+from .runtime import (
+    start_server, stop_server, restart_server,
+    unload_model, unload_all_models, remove_model,
+    get_server_version
 )
 from .hub import HUB_MODELS, render_hub_table, pull_model_stream
 from .doctor import run_doctor
-
-HISTORY_FILE = os.path.expanduser("~/.config/llm-ctl/history")
+from .paths import HISTORY_FILE, ensure_directories
 
 def init_history():
-    """Initializes persistent command history, ignoring secrets and sensitive content."""
+    """Initializes persistent command history in ~/.local/state/llm-ctl/history."""
+    ensure_directories()
     try:
-        os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
         if os.path.exists(HISTORY_FILE):
             readline.read_history_file(HISTORY_FILE)
     except Exception:
@@ -55,7 +59,7 @@ def init_history():
     atexit.register(save_history)
 
 class Completer:
-    """Contextual Tab-completion for the interactive llm> REPL."""
+    """Contextual Tab-completion for the interactive REPL."""
     def __init__(self, commands: list[str]):
         self.commands = commands
 
@@ -68,8 +72,8 @@ class Completer:
             options = [c for c in self.commands if c.startswith(text)]
             return options[state] if state < len(options) else None
 
-        # Model argument completion for switch, pull, remove, chat, models
-        if parts and parts[0] in ("switch", "use", "remove", "rm", "delete", "chat"):
+        # Model argument completion for switch, pull, remove, unload, chat
+        if parts and parts[0] in ("switch", "use", "remove", "rm", "delete", "unload", "free", "chat"):
             installed = get_installed_models()
             model_names = [m.get("name", "") for m in installed if m.get("name")]
             options = [m for m in model_names if m.startswith(text)]
@@ -104,14 +108,15 @@ def display_reference_screen():
     ram = get_system_ram()
     loaded = get_loaded_models()
     installed = get_installed_models()
+    version = get_server_version() if is_active else None
 
     # 1. Hero 3D Banner
     print()
     print(render_reference_banner())
     print()
 
-    # 2. Horizontal Status Card
-    print(render_reference_status_card(is_active, OLLAMA_HOST, gpu, ram, active, loaded, installed))
+    # 2. Compact Status Summary
+    print(render_reference_status_card(is_active, OLLAMA_HOST, gpu, ram, active, loaded, installed, version_str=version))
     print()
 
     # 3. Quick Commands Matrix
@@ -121,12 +126,12 @@ def display_reference_screen():
 def run_interactive_repl():
     """
     Main interactive REPL shell.
-    Prompts with 'llm> ' and executes commands without quitting unless Ctrl+C / Ctrl+D / exit is used.
+    Prompts with 'llm ❯ ' and executes commands without quitting unless Ctrl+C / Ctrl+D / exit is used.
     """
     commands = [
-        "models", "switch", "chat", "agents", "status",
-        "pull", "remove", "run", "doctor", "config", "help",
-        "free", "purge", "clear", "exit", "quit"
+        "models", "switch", "chat", "pull", "unload", "remove",
+        "start", "stop", "restart", "run", "agents", "status",
+        "doctor", "config", "help", "clear", "exit", "quit"
     ]
 
     init_history()
@@ -140,10 +145,10 @@ def run_interactive_repl():
 
     while True:
         try:
-            prompt = f"  {BRIGHT_GREEN}llm>{RESET} "
+            prompt = f"  {BOLD}{BRIGHT_CYAN}llm-ctl{RESET} {BRIGHT_GREEN}❯{RESET} "
             user_input = input(prompt).strip()
         except (KeyboardInterrupt, EOFError):
-            print(f"\n  {DIM}Exiting llm-ctl. Service remains active on :11434.{RESET}\n")
+            print(f"\n  {DIM}Exiting llm-ctl. Service state preserved.{RESET}\n")
             sys.exit(0)
 
         if not user_input:
@@ -154,10 +159,13 @@ def run_interactive_repl():
         args = parts[1:]
 
         if cmd in ("exit", "quit", "q"):
-            print(f"\n  {DIM}Exiting llm-ctl. Service remains active on :11434.{RESET}\n")
+            print(f"\n  {DIM}Exiting llm-ctl. Service state preserved.{RESET}\n")
             sys.exit(0)
 
         elif cmd in ("clear", "cls"):
+            display_reference_screen()
+
+        elif cmd in ("status", "info"):
             display_reference_screen()
 
         elif cmd in ("models", "ls", "list"):
@@ -215,16 +223,86 @@ def run_interactive_repl():
         elif cmd == "chat":
             if not get_service_status():
                 print(f"\n  {RED}Error: Ollama service is offline.{RESET}")
-                print(f"  {DIM}Type 'run' to start the local Ollama background service.{RESET}\n")
+                print(f"  {DIM}Type 'start' to start the local Ollama background service.{RESET}\n")
                 continue
 
             active = args[0] if args else get_active_model()
-            print(f"\n  {BOLD}{CYAN}Connecting to {active}... (Type '/bye' to return to llm> prompt){RESET}\n")
+            print(f"\n  {BOLD}{CYAN}Connecting to {active}... (Type '/bye' to return to prompt){RESET}\n")
             try:
                 subprocess.run(["ollama", "run", active])
             except Exception as e:
                 print(f"  {RED}Error launching chat session:{RESET} {e}\n")
             display_reference_screen()
+
+        elif cmd in ("start", "run"):
+            print(f"\n  {CYAN}Starting Ollama server...{RESET}")
+            ok, msg = start_server()
+            if ok:
+                print(f"  {BRIGHT_GREEN}✔ {msg}{RESET}\n")
+            else:
+                print(f"  {RED}✖ {msg}{RESET}\n")
+            display_reference_screen()
+
+        elif cmd == "stop":
+            print(f"\n  {YELLOW}Stopping Ollama server...{RESET}")
+            ok, msg = stop_server()
+            if ok:
+                print(f"  {BRIGHT_GREEN}✔ {msg}{RESET}\n")
+            else:
+                print(f"  {RED}✖ {msg}{RESET}\n")
+            display_reference_screen()
+
+        elif cmd == "restart":
+            print(f"\n  {CYAN}Restarting Ollama server...{RESET}")
+            ok, msg = restart_server()
+            if ok:
+                print(f"  {BRIGHT_GREEN}✔ {msg}{RESET}\n")
+            else:
+                print(f"  {RED}✖ {msg}{RESET}\n")
+            display_reference_screen()
+
+        elif cmd in ("unload", "free", "evict"):
+            if args:
+                target_m = args[0]
+                ok, msg = unload_model(target_m)
+                if ok:
+                    print(f"\n  {BRIGHT_GREEN}✔ {msg}{RESET}\n")
+                else:
+                    print(f"\n  {RED}✖ {msg}{RESET}\n")
+            else:
+                evicted = unload_all_models()
+                if evicted:
+                    print(f"\n  {BRIGHT_GREEN}✔ Unloaded {len(evicted)} model(s): {', '.join(evicted)}. VRAM is 100% free!{RESET}\n")
+                else:
+                    print(f"\n  {BRIGHT_GREEN}✔ VRAM is completely free (0 models loaded in memory).{RESET}\n")
+            display_reference_screen()
+
+        elif cmd in ("remove", "rm", "delete"):
+            if not args:
+                installed = get_installed_models()
+                if not installed:
+                    print(f"\n  {DIM}No installed models to remove.{RESET}\n")
+                    continue
+                print(f"\n  {BOLD}{WHITE}Installed models on disk:{RESET}")
+                for idx, m in enumerate(installed, 1):
+                    print(f"    [{idx}] {m.get('name', '')}")
+                target_del = input(f"\n  {YELLOW}Enter model name or # to remove: {RESET}").strip()
+                if target_del.isdigit() and 1 <= int(target_del) <= len(installed):
+                    target_del = installed[int(target_del) - 1]["name"]
+            else:
+                target_del = args[0]
+
+            if target_del:
+                confirm = input(f"  {BOLD}{YELLOW}Are you sure you want to permanently delete model weights for '{target_del}'? [y/N]: {RESET}").strip().lower()
+                if confirm in ("y", "yes"):
+                    ok, msg = remove_model(target_del)
+                    if ok:
+                        print(f"  {BRIGHT_GREEN}✔ {msg}{RESET}\n")
+                    else:
+                        print(f"  {RED}✖ {msg}{RESET}\n")
+                    display_reference_screen()
+                else:
+                    print(f"  {DIM}Deletion cancelled.{RESET}\n")
 
         elif cmd in ("agents", "launch"):
             active = get_active_model()
@@ -284,9 +362,6 @@ def run_interactive_repl():
                     subprocess.run(["dsh", "web"])
                     display_reference_screen()
 
-        elif cmd == "status":
-            display_reference_screen()
-
         elif cmd == "doctor":
             run_doctor()
 
@@ -310,47 +385,6 @@ def run_interactive_repl():
                 pull_model_stream(target_pull)
                 display_reference_screen()
 
-        elif cmd in ("remove", "rm", "delete"):
-            if not args:
-                installed = get_installed_models()
-                if not installed:
-                    print(f"\n  {DIM}No installed models to remove.{RESET}\n")
-                    continue
-                print(f"\n  {BOLD}{WHITE}Installed models:{RESET}")
-                for idx, m in enumerate(installed, 1):
-                    print(f"    [{idx}] {m.get('name', '')}")
-                target_del = input(f"\n  {YELLOW}Enter model name or # to remove: {RESET}").strip()
-                if target_del.isdigit() and 1 <= int(target_del) <= len(installed):
-                    target_del = installed[int(target_del) - 1]["name"]
-            else:
-                target_del = args[0]
-
-            if target_del:
-                confirm = input(f"  {BOLD}{YELLOW}Are you sure you want to remove '{target_del}'? [y/N]: {RESET}").strip().lower()
-                if confirm in ("y", "yes"):
-                    res = subprocess.run(["ollama", "rm", target_del], capture_output=True, text=True)
-                    if res.returncode == 0:
-                        print(f"  {BRIGHT_GREEN}✔ Successfully removed {target_del}{RESET}\n")
-                    else:
-                        print(f"  {RED}Failed to remove {target_del}:{RESET} {res.stderr.strip()}\n")
-                    display_reference_screen()
-                else:
-                    print(f"  {DIM}Deletion cancelled.{RESET}\n")
-
-        elif cmd == "run":
-            print(f"\n  {CYAN}Starting Ollama systemd background service...{RESET}")
-            subprocess.run(["systemctl", "--user", "start", "ollama"])
-            time.sleep(0.5)
-            display_reference_screen()
-
-        elif cmd in ("free", "purge", "unload"):
-            evicted = free_vram()
-            if evicted:
-                print(f"\n  {BRIGHT_GREEN}✔ Evicted {len(evicted)} model(s): {', '.join(evicted)}. GPU VRAM is 100% free!{RESET}\n")
-            else:
-                print(f"\n  {BRIGHT_GREEN}✔ GPU VRAM is already completely free (0 models loaded).{RESET}\n")
-            display_reference_screen()
-
         elif cmd == "config":
             if not args or args[0] in ("show", "view"):
                 print(f"\n  {BOLD}{WHITE}Configuration:{RESET} {DIM}{CONFIG_FILE}{RESET}")
@@ -362,7 +396,7 @@ def run_interactive_repl():
                     except Exception as e:
                         print(f"  {RED}Error reading config:{RESET} {e}")
                 else:
-                    print(f"  {DIM}No config file found. Will be created on model switch.{RESET}")
+                    print(f"  {DIM}No config file found. Default model: {get_active_model()}{RESET}")
                 print()
             elif args[0] == "path":
                 print(f"  {CONFIG_FILE}\n")
@@ -381,8 +415,12 @@ def run_interactive_repl():
         elif cmd in ("help", "?"):
             print()
             print(render_reference_quick_commands())
-            print(f"\n  {DIM}Interactive controls: Type command names, press [Tab] to auto-complete, [Up]/[Down] for history.{RESET}")
-            print(f"  {DIM}Quit strictly with: 'exit', 'quit', Ctrl+C, or Ctrl+D.{RESET}\n")
+            print(f"\n  {DIM}Commands:{RESET}")
+            print(f"    {WHITE}Server controls:{RESET}  start, stop, restart")
+            print(f"    {WHITE}Model controls:{RESET}   models, switch <model>, unload [model], remove <model>, pull <model>, chat [model]")
+            print(f"    {WHITE}System & config:{RESET}  status, doctor, agents, config, clear, help, exit")
+            print(f"  {DIM}Navigation: [Tab] auto-completes, [Up]/[Down] browses history.{RESET}")
+            print(f"  {DIM}Exit: 'exit', 'quit', Ctrl+C, or Ctrl+D.{RESET}\n")
 
         else:
             print(f"\n  {RED}Unknown command:{RESET} '{cmd}'. Type {BRIGHT_GREEN}help{RESET} for available commands.\n")
