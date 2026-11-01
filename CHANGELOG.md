@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] - 2026-11-01
+
+### Changed
+
+- Replaced the Python implementation with a high-performance native Rust CLI built with Cargo.
+- Added native Rust command handlers, telemetry engine, Ollama lifecycle controller, diagnostics, and interactive line editor with Tab completion and history navigation.
+- Added unified agent routing for Claude Code, OpenCode CLI, Pi Coding Agent, and DeepSeek Harness (`~/.dsh/profiles/web/cordis.patch.yml`).
+- Added curated model catalog with dynamic VRAM feasibility calculation based on active GPU specs.
+- Replaced Python packaging and CI with stable Rust build, lint, test, and Linux multi-arch release workflows.
+- Preserved XDG configuration and history paths with non-destructive atomic config updates.
+
+### Removed
+
+- Removed the Python package, Python dependencies, and `pyproject.toml`.
+
 ## [1.0.0] - 2026-10-30
 
 ### Initial Linux V1 Release
