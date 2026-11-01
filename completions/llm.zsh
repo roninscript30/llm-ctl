@@ -19,7 +19,8 @@ _llm() {
         'remove:Permanently delete model weights from disk'
         'rm:Permanently delete model weights from disk'
         'delete:Permanently delete model weights from disk'
-        'agents:Launch coding agent (claude, opencode, dsh)'
+        'agents:Launch coding agent (claude, opencode, pi, dsh)'
+        'pi:Launch Pi Coding Agent pre-wired to active model'
         'doctor:Diagnose environment, drivers, agents, config'
         'config:Inspect or edit configuration'
         'help:Show command reference and help screen'
@@ -32,6 +33,7 @@ _llm() {
     agents=(
         'claude:Claude Code CLI'
         'opencode:OpenCode terminal agent'
+        'pi:Pi Coding Agent CLI'
         'dsh:DeepSeek Harness Web/CLI'
     )
 

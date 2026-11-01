@@ -24,6 +24,7 @@ from llm_ctl.orchestrator import (
     free_vram,
     sync_claude_code,
     sync_opencode,
+    sync_pi,
     sync_dsh,
     save_active_model,
     get_active_model,
@@ -225,8 +226,20 @@ class TestOrchestrator(unittest.TestCase):
         test_dir = "/tmp/llm_ctl_test_sync"
         claude_path = os.path.join(test_dir, ".claude", "settings.json")
         opencode_path = os.path.join(test_dir, ".config", "opencode", "opencode.jsonc")
+        pi_dir = os.path.join(test_dir, ".pi", "agent")
+        pi_models_path = os.path.join(pi_dir, "models.json")
+        pi_settings_path = os.path.join(pi_dir, "settings.json")
 
-        with patch("os.path.expanduser", side_effect=lambda p: p.replace("~/.claude/settings.json", claude_path).replace("~/.config/opencode/opencode.jsonc", opencode_path)):
+        def mock_expand(p):
+            if "~/.claude/settings.json" in p:
+                return claude_path
+            if "~/.config/opencode/opencode.jsonc" in p:
+                return opencode_path
+            if "~/.pi/agent" in p:
+                return p.replace("~/.pi/agent", pi_dir)
+            return p
+
+        with patch("os.path.expanduser", side_effect=mock_expand):
             # Sync claude
             res_c = sync_claude_code("qwen2.5-coder:3b")
             self.assertTrue(res_c)
@@ -243,6 +256,21 @@ class TestOrchestrator(unittest.TestCase):
             with open(opencode_path) as f:
                 o_data = json.load(f)
                 self.assertEqual(o_data["model"], "ollama/qwen2.5-coder:3b")
+
+            # Sync pi
+            res_p = sync_pi("qwen2.5-coder:3b")
+            self.assertTrue(res_p)
+            self.assertTrue(os.path.exists(pi_models_path))
+            self.assertTrue(os.path.exists(pi_settings_path))
+            with open(pi_models_path) as f:
+                pi_m_data = json.load(f)
+                self.assertIn("ollama", pi_m_data["providers"])
+                self.assertEqual(pi_m_data["providers"]["ollama"]["baseUrl"], "http://127.0.0.1:11434/v1")
+                self.assertTrue(any(m["id"] == "qwen2.5-coder:3b" for m in pi_m_data["providers"]["ollama"]["models"]))
+            with open(pi_settings_path) as f:
+                pi_s_data = json.load(f)
+                self.assertEqual(pi_s_data["defaultProvider"], "ollama")
+                self.assertEqual(pi_s_data["defaultModel"], "qwen2.5-coder:3b")
 
 if __name__ == "__main__":
     unittest.main()

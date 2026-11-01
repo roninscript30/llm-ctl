@@ -29,7 +29,8 @@ from .hardware import (
 )
 from .orchestrator import (
     get_active_model, save_active_model, switch_model,
-    sync_all_configs, get_model_status, CONFIG_FILE
+    sync_all_configs, sync_opencode, sync_pi,
+    get_model_status, CONFIG_FILE
 )
 from .runtime import (
     start_server, stop_server, restart_server,
@@ -87,7 +88,7 @@ class Completer:
 
         # Agent argument completion
         if parts and parts[0] in ("agents", "launch"):
-            agent_names = ["claude", "opencode", "dsh"]
+            agent_names = ["claude", "opencode", "pi", "dsh"]
             options = [a for a in agent_names if a.startswith(text)]
             return options[state] if state < len(options) else None
 
@@ -130,7 +131,7 @@ def run_interactive_repl():
     """
     commands = [
         "models", "switch", "chat", "pull", "unload", "remove",
-        "start", "stop", "restart", "run", "agents", "status",
+        "start", "stop", "restart", "run", "agents", "pi", "status",
         "doctor", "config", "help", "clear", "exit", "quit"
     ]
 
@@ -310,22 +311,27 @@ def run_interactive_repl():
                 print(f"\n  {BOLD}{WHITE}Launch Coding Agent (Active Model: {active}):{RESET}")
                 claude_ok = shutil.which("claude") is not None
                 opencode_ok = shutil.which("opencode") is not None
+                pi_ok = shutil.which("pi") is not None
                 dsh_ok = shutil.which("dsh") is not None
 
                 c1 = f"{BRIGHT_GREEN}Ready{RESET}" if claude_ok else f"{YELLOW}Not Installed{RESET}"
                 c2 = f"{BRIGHT_GREEN}Ready{RESET}" if opencode_ok else f"{YELLOW}Not Installed{RESET}"
-                c3 = f"{BRIGHT_GREEN}Ready{RESET}" if dsh_ok else f"{YELLOW}Not Installed{RESET}"
+                c3 = f"{BRIGHT_GREEN}Ready{RESET}" if pi_ok else f"{YELLOW}Not Installed{RESET}"
+                c4 = f"{BRIGHT_GREEN}Ready{RESET}" if dsh_ok else f"{YELLOW}Not Installed{RESET}"
 
                 print(f"    [1] Claude Code       {DIM}(claude --model {active}){RESET} [{c1}]")
                 print(f"    [2] OpenCode CLI      {DIM}(opencode --model ollama/{active}){RESET} [{c2}]")
-                print(f"    [3] DeepSeek Harness  {DIM}(dsh web on :3080){RESET} [{c3}]")
-                choice = input(f"\n  {CYAN}Select agent [1-3, or Enter to cancel]: {RESET}").strip()
+                print(f"    [3] Pi Coding Agent   {DIM}(pi --provider ollama --model {active}){RESET} [{c3}]")
+                print(f"    [4] DeepSeek Harness  {DIM}(dsh web on :3080){RESET} [{c4}]")
+                choice = input(f"\n  {CYAN}Select agent [1-4, or Enter to cancel]: {RESET}").strip()
 
                 if choice == "1":
                     target_agent = "claude"
                 elif choice == "2":
                     target_agent = "opencode"
                 elif choice == "3":
+                    target_agent = "pi"
+                elif choice == "4":
                     target_agent = "dsh"
                 else:
                     target_agent = None
@@ -350,7 +356,17 @@ def run_interactive_repl():
                     print(f"\n  {RED}OpenCode CLI is not installed in PATH.{RESET}")
                     print(f"  {DIM}Install via: curl -fsSL https://opencode.ai/install.sh | bash{RESET}\n")
                 else:
+                    sync_opencode(active)
                     subprocess.run(["opencode", "--model", f"ollama/{active}"])
+                    display_reference_screen()
+
+            elif target_agent in ("pi",):
+                if not shutil.which("pi"):
+                    print(f"\n  {RED}Pi Coding Agent is not installed in PATH.{RESET}")
+                    print(f"  {DIM}Install via: npm i -g @earendil-works/pi-coding-agent{RESET}\n")
+                else:
+                    sync_pi(active)
+                    subprocess.run(["pi", "--provider", "ollama", "--model", active])
                     display_reference_screen()
 
             elif target_agent in ("dsh", "deepseek"):
@@ -361,6 +377,16 @@ def run_interactive_repl():
                     print(f"\n  {CYAN}Starting DeepSeek Harness Web UI...{RESET}")
                     subprocess.run(["dsh", "web"])
                     display_reference_screen()
+
+        elif cmd in ("pi",):
+            active = get_active_model()
+            if not shutil.which("pi"):
+                print(f"\n  {RED}Pi Coding Agent is not installed in PATH.{RESET}")
+                print(f"  {DIM}Install via: npm i -g @earendil-works/pi-coding-agent{RESET}\n")
+            else:
+                sync_pi(active)
+                subprocess.run(["pi", "--provider", "ollama", "--model", active] + args)
+                display_reference_screen()
 
         elif cmd == "doctor":
             run_doctor()

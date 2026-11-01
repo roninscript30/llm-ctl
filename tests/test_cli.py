@@ -116,7 +116,7 @@ class TestLlmCtl(unittest.TestCase):
         self.assertIn("GiB", ram_msg)
 
         agents = check_coding_agents()
-        self.assertEqual(len(agents), 3)
+        self.assertEqual(len(agents), 4)
 
     def test_interactive_completer(self):
         from llm_ctl.interactive import Completer

@@ -18,7 +18,7 @@
 
 `llm-ctl` (invoked as `llm` or `llm-ctl`) is a fast, zero-sudo Linux terminal tool and interactive shell designed to give developers full control over local large language models (powered by [Ollama](https://ollama.com)).
 
-It delivers live hardware telemetry, single-model VRAM isolation, instant model hot-swapping, server lifecycle control, and automated configuration synchronization with AI coding assistants like **Claude Code**, **OpenCode**, and **DeepSeek Harness**.
+It delivers live hardware telemetry, single-model VRAM isolation, instant model hot-swapping, server lifecycle control, and automated configuration synchronization with AI coding assistants like **Claude Code**, **OpenCode**, **Pi Coding Agent**, and **DeepSeek Harness**.
 
 ---
 
@@ -32,7 +32,7 @@ Default local runtimes often leave multiple models memory-mapped simultaneously 
 
 ### 2. Manual Coding-Agent Configuration Drift
 Switching models (such as jumping from `qwen2.5-coder:3b` for routine autocomplete to `deepseek-r1:1.5b` for complex logic) usually requires hunting down and manually editing JSON and YAML configuration files for each developer agent.
-* **LLM-CTL Solution**: Performs **atomic multi-agent configuration sync**. One command (`llm switch <model>`) automatically rewrites model identifiers and local endpoint URLs for **Claude Code** (`~/.claude/settings.json`), **OpenCode** (`~/.config/opencode/opencode.jsonc`), and **DeepSeek Harness** (`cordis.patch.yml`).
+* **LLM-CTL Solution**: Performs **atomic multi-agent configuration sync**. One command (`llm switch <model>`) automatically rewrites model identifiers and local endpoint URLs for **Claude Code** (`~/.claude/settings.json`), **OpenCode** (`~/.config/opencode/opencode.jsonc`), **Pi Coding Agent** (`~/.pi/agent/models.json` & `settings.json`), and **DeepSeek Harness** (`cordis.patch.yml`).
 
 ### 3. Lack of Clear Lifecycle Controls
 Developers frequently confuse stopping the Ollama daemon, unloading a model from GPU memory, and deleting model weights from disk.
@@ -189,7 +189,7 @@ Both `llm` and `llm-ctl` can be used interchangeably.
 | `llm start` | `run` | Starts the local Ollama daemon via systemd user unit or background process fallback. |
 | `llm stop` | — | Gracefully flushes active models from VRAM and stops the Ollama daemon. |
 | `llm restart` | — | Cycles the local server daemon and re-verifies socket availability. |
-| `llm agents <name>` | `launch` | Launches a coding agent (`claude`, `opencode`, `dsh`) pre-wired to the active local model. |
+| `llm agents <name>` | `launch` | Launches a coding agent (`claude`, `opencode`, `pi`, `dsh`) pre-wired to the active local model. |
 | `llm doctor` | — | Diagnoses runtime reachability, NVIDIA drivers, RAM headroom, agent binaries, and configuration integrity. |
 | `llm config [show\|path\|set]` | — | Inspects or updates configuration values. Supports `--json`. |
 | `llm help` | `-h`, `--help` | Displays command reference and usage examples. |

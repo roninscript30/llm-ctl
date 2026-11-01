@@ -22,7 +22,8 @@ from .hardware import (
 )
 from .orchestrator import (
     get_active_model, save_active_model, switch_model,
-    sync_all_configs, get_model_status, CONFIG_FILE
+    sync_all_configs, sync_opencode, sync_pi,
+    get_model_status, CONFIG_FILE
 )
 from .runtime import (
     start_server, stop_server, restart_server,
@@ -121,7 +122,7 @@ def cmd_models(json_output: bool = False):
 def cmd_launch(args: list[str]):
     """Launches one of the coding agent clients."""
     if not args:
-        print(f"\n  {BOLD}{YELLOW}Usage:{RESET} llm agents <claude|opencode|dsh>\n")
+        print(f"\n  {BOLD}{YELLOW}Usage:{RESET} llm agents <claude|opencode|pi|dsh>\n")
         return
 
     target = args[0].lower()
@@ -146,8 +147,18 @@ def cmd_launch(args: list[str]):
             print(f"\n  {RED}Error: 'opencode' CLI is not found in PATH.{RESET}")
             print(f"  {DIM}Install via: curl -fsSL https://opencode.ai/install.sh | bash{RESET}\n")
             sys.exit(1)
+        sync_opencode(active)
         print(f"\n  {BOLD}{CYAN}Starting OpenCode with active model:{RESET} {BRIGHT_GREEN}ollama/{active}{RESET}\n")
         subprocess.run(["opencode", "--model", f"ollama/{active}"] + extra)
+
+    elif target in ("pi",):
+        if not shutil.which("pi"):
+            print(f"\n  {RED}Error: 'pi' CLI is not found in PATH.{RESET}")
+            print(f"  {DIM}Install via: npm i -g @earendil-works/pi-coding-agent{RESET}\n")
+            sys.exit(1)
+        sync_pi(active)
+        print(f"\n  {BOLD}{CYAN}Starting Pi Coding Agent with active model:{RESET} {BRIGHT_GREEN}ollama/{active}{RESET}\n")
+        subprocess.run(["pi", "--provider", "ollama", "--model", active] + extra)
 
     elif target in ("dsh", "deepseek"):
         if not shutil.which("dsh"):
@@ -162,7 +173,7 @@ def cmd_launch(args: list[str]):
             subprocess.run(["dsh", "headless"] + extra)
 
     else:
-        print(f"\n  {BOLD}{RED}Unknown agent client:{RESET} '{target}'. Available: claude, opencode, dsh\n")
+        print(f"\n  {BOLD}{RED}Unknown agent client:{RESET} '{target}'. Available: claude, opencode, pi, dsh\n")
         sys.exit(1)
 
 def print_help():
@@ -184,7 +195,7 @@ def print_help():
     print(f"\n  {BOLD}Integrations & Diagnostics:{RESET}")
     print(f"    status             Show system & model status (supports --json)")
     print(f"    doctor             Diagnose environment, drivers, agents, config")
-    print(f"    agents <name>      Launch coding agent (claude, opencode, dsh)")
+    print(f"    agents <name>      Launch coding agent (claude, opencode, pi, dsh)")
     print(f"    config [show|set]  Inspect or edit configuration (supports --json)")
     print(f"    help               Show this command reference")
     print()
@@ -312,6 +323,9 @@ def main():
 
     elif cmd in ("opencode", "oc"):
         cmd_launch(["opencode"] + rest)
+
+    elif cmd in ("pi",):
+        cmd_launch(["pi"] + rest)
 
     elif cmd in ("dsh", "deepseek"):
         cmd_launch(["dsh"] + rest)

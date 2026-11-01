@@ -77,10 +77,11 @@ def check_active_model() -> tuple[bool, str, str]:
     return False, f"Active model '{active}' is NOT found among installed models", f"Installed models: {', '.join(names[:4])}. Run 'llm switch <model>' to select an installed model."
 
 def check_coding_agents() -> list[tuple[str, bool, str]]:
-    """Checks installed status of supported coding agents: Claude Code, OpenCode, DSH."""
+    """Checks installed status of supported coding agents: Claude Code, OpenCode, Pi, DSH."""
     agents = [
         ("Claude Code", "claude", "npm i -g @anthropic-ai/claude-code"),
         ("OpenCode CLI", "opencode", "curl -fsSL https://opencode.ai/install.sh | bash"),
+        ("Pi Coding Agent", "pi", "npm i -g @earendil-works/pi-coding-agent"),
         ("DeepSeek Harness", "dsh", "npm i -g deepseek-harness")
     ]
     results = []

@@ -109,6 +109,76 @@ def sync_opencode(model_name: str) -> bool:
     except Exception:
         return False
 
+def sync_pi(model_name: str) -> bool:
+    """Synchronizes Pi coding agent models.json and settings.json with the active model."""
+    pi_dir = os.path.expanduser("~/.pi/agent")
+    try:
+        os.makedirs(pi_dir, exist_ok=True)
+        # 1. Update models.json
+        models_path = os.path.join(pi_dir, "models.json")
+        models_data = {}
+        if os.path.exists(models_path):
+            try:
+                with open(models_path, "r", encoding="utf-8") as f:
+                    models_data = json.load(f)
+            except Exception:
+                models_data = {}
+
+        models_data["$schema"] = "https://pi.dev/schemas/models.schema.json"
+        providers = models_data.setdefault("providers", {})
+        ollama_provider = providers.setdefault("ollama", {})
+        ollama_provider["name"] = "Ollama (Local)"
+        ollama_provider["baseUrl"] = "http://127.0.0.1:11434/v1"
+        ollama_provider["api"] = "openai-completions"
+        ollama_provider["apiKey"] = "ollama"
+
+        existing_models = ollama_provider.setdefault("models", [])
+        known_ids = {m.get("id") for m in existing_models if isinstance(m, dict)}
+
+        if model_name not in known_ids:
+            existing_models.append({"id": model_name, "name": f"Ollama {model_name}"})
+            known_ids.add(model_name)
+
+        try:
+            installed = get_installed_models()
+            for inst in installed:
+                inst_id = inst.get("name")
+                if inst_id and inst_id not in known_ids:
+                    existing_models.append({"id": inst_id, "name": f"Ollama {inst_id}"})
+                    known_ids.add(inst_id)
+        except Exception:
+            pass
+
+        tmp_models = f"{models_path}.tmp.{os.getpid()}"
+        with open(tmp_models, "w", encoding="utf-8") as f:
+            json.dump(models_data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_models, models_path)
+
+        # 2. Update settings.json
+        settings_path = os.path.join(pi_dir, "settings.json")
+        settings_data = {}
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    settings_data = json.load(f)
+            except Exception:
+                settings_data = {}
+
+        settings_data["defaultProvider"] = "ollama"
+        settings_data["defaultModel"] = model_name
+
+        tmp_settings = f"{settings_path}.tmp.{os.getpid()}"
+        with open(tmp_settings, "w", encoding="utf-8") as f:
+            json.dump(settings_data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_settings, settings_path)
+        return True
+    except Exception:
+        return False
+
 def sync_dsh(model_name: str) -> bool:
     """Synchronizes DeepSeek Harness cordis.patch.yml default model using safe file writes."""
     path = os.path.expanduser("~/.dsh/profiles/web/cordis.patch.yml")
@@ -137,9 +207,10 @@ def sync_dsh(model_name: str) -> bool:
     return False
 
 def sync_all_configs(model_name: str):
-    """Syncs the given model across Claude Code, OpenCode, and DSH."""
+    """Syncs the given model across Claude Code, OpenCode, Pi, and DSH."""
     sync_claude_code(model_name)
     sync_opencode(model_name)
+    sync_pi(model_name)
     sync_dsh(model_name)
 
 def get_model_status(model_name: str) -> str:
@@ -312,7 +383,7 @@ def switch_model(target_name: str | int, quiet: bool = False) -> bool:
     # 5. Sync client configurations
     sync_all_configs(match)
     if not quiet:
-        console.print("  [dim]• Synchronized configs: Claude Code, OpenCode & DeepSeek Harness[/dim]")
+        console.print("  [dim]• Synchronized configs: Claude Code, OpenCode, Pi & DeepSeek Harness[/dim]")
 
     # 6. Evict old models from VRAM
     try:

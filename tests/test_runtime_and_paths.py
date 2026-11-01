@@ -646,7 +646,7 @@ class TestScriptsAndCompletions(unittest.TestCase):
         required_commands = [
             "status", "models", "ls", "switch", "use", "pull", "chat",
             "start", "run", "stop", "restart", "unload", "free",
-            "remove", "rm", "delete", "agents", "doctor", "config", "help"
+            "remove", "rm", "delete", "agents", "pi", "doctor", "config", "help"
         ]
 
         # Check completions/llm.bash
