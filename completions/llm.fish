@@ -20,7 +20,8 @@ for cmd in llm llm-ctl
     complete -c $cmd -n "__fish_use_subcommand" -a remove -d "Permanently delete model weights from disk"
     complete -c $cmd -n "__fish_use_subcommand" -a rm -d "Permanently delete model weights from disk"
     complete -c $cmd -n "__fish_use_subcommand" -a delete -d "Permanently delete model weights from disk"
-    complete -c $cmd -n "__fish_use_subcommand" -a agents -d "Launch coding agent (claude, opencode, dsh)"
+    complete -c $cmd -n "__fish_use_subcommand" -a agents -d "Launch coding agent (claude, opencode, pi, dsh)"
+    complete -c $cmd -n "__fish_use_subcommand" -a pi -d "Launch Pi Coding Agent"
     complete -c $cmd -n "__fish_use_subcommand" -a doctor -d "Diagnose environment, drivers, agents, config"
     complete -c $cmd -n "__fish_use_subcommand" -a config -d "Inspect or edit configuration"
     complete -c $cmd -n "__fish_use_subcommand" -a help -d "Show help and command reference"
@@ -28,7 +29,7 @@ for cmd in llm llm-ctl
     # Aliases
     complete -c $cmd -n "__fish_use_subcommand" -a info -d "Show system, active model and hardware status"
     complete -c $cmd -n "__fish_use_subcommand" -a list -d "List all installed local models"
-    complete -c $cmd -n "__fish_use_subcommand" -a launch -d "Launch coding agent (claude, opencode, dsh)"
+    complete -c $cmd -n "__fish_use_subcommand" -a launch -d "Launch coding agent (claude, opencode, pi, dsh)"
     complete -c $cmd -n "__fish_use_subcommand" -a evict -d "Evict all models to free 100% GPU VRAM"
 
     # Global flags
@@ -37,6 +38,6 @@ for cmd in llm llm-ctl
 
     # Positional argument completions
     complete -c $cmd -n "__fish_seen_subcommand_from switch use unload remove rm delete chat" -a "(ollama list 2>/dev/null | awk 'NR>1 {print \$1}')"
-    complete -c $cmd -n "__fish_seen_subcommand_from agents launch" -a "claude opencode dsh"
+    complete -c $cmd -n "__fish_seen_subcommand_from agents launch" -a "claude opencode pi dsh"
     complete -c $cmd -n "__fish_seen_subcommand_from config" -a "show path set view"
 end

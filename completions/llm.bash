@@ -5,8 +5,8 @@ _llm_completion() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    subcommands="status info models ls list switch use pull chat start run stop restart unload free evict remove rm delete agents launch claude cc opencode oc dsh deepseek doctor config help"
-    agents="claude opencode dsh"
+    subcommands="status info models ls list switch use pull chat start run stop restart unload free evict remove rm delete agents launch claude cc opencode oc pi dsh deepseek doctor config help"
+    agents="claude opencode pi dsh"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "${subcommands} --json -h --help" -- "$cur") )
