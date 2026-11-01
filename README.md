@@ -22,13 +22,25 @@ LLM-CTL is a lightweight, native Linux CLI for managing local Ollama models, ser
 
 ## Installation
 
+### Method 1: One-Line Curl Installer (Recommended)
+
+Install or update LLM-CTL in user space with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/roninscript30/llm-ctl/main/scripts/install.sh | bash
+```
+
+The installer automatically detects your Linux architecture (`x86_64` or `aarch64`), attempts to download the pre-compiled binary release for fast setup, and seamlessly falls back to building from source with Cargo if needed.
+
+### Method 2: From Local Repository
+
 ```bash
 git clone https://github.com/roninscript30/llm-ctl.git
 cd llm-ctl
-bash scripts/install.sh
+./install.sh
 ```
 
-The installer builds the optimized release binary and installs `llm` and symlink `llm-ctl` into `~/.local/bin`. Ensure `~/.local/bin` is in your `PATH`:
+Both methods install `llm` and symlink `llm-ctl` into `~/.local/bin` without requiring root or `sudo` privileges. Ensure `~/.local/bin` is in your `PATH`:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
