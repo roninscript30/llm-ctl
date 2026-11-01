@@ -37,7 +37,7 @@ The installer automatically detects your Linux architecture (`x86_64` or `aarch6
 ```bash
 git clone https://github.com/roninscript30/llm-ctl.git
 cd llm-ctl
-./install.sh
+bash scripts/install.sh
 ```
 
 Both methods install `llm` and symlink `llm-ctl` into `~/.local/bin` without requiring root or `sudo` privileges. Ensure `~/.local/bin` is in your `PATH`:

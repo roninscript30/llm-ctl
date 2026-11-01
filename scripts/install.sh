@@ -2,7 +2,7 @@
 # ==============================================================================
 # LLM-CTL — Linux Installation Script
 # Supported: curl -fsSL https://raw.githubusercontent.com/roninscript30/llm-ctl/main/scripts/install.sh | bash
-# Or locally: ./install.sh / bash scripts/install.sh
+# Or locally: bash scripts/install.sh
 # ==============================================================================
 set -euo pipefail
 
